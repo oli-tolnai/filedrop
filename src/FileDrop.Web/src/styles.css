@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --blue: #1769aa;
+  --blue-dark: #0e568e;
+  --ink: #172b3a;
+  --muted: #526777;
+  --canvas: #f5f8fa;
+  --pale-blue: #dff3f5;
+  --line: #d6e1e8;
+  --white: #fff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #1769aa;
+  outline-offset: 3px;
+}
+
+::selection {
+  background: #b9deeb;
+  color: #172b3a;
+}

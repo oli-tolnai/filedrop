@@ -1,0 +1,26 @@
+services:
+  filedrop:
+    build:
+      context: .
+    image: filedrop:local
+    container_name: filedrop
+    restart: unless-stopped
+    ports:
+      - "${FILEDROP_BIND_ADDRESS:-192.168.0.34}:${FILEDROP_PORT:-8090}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      FileDrop__StoragePath: /app/data/files
+      FileDrop__TemporaryPath: /app/data/incoming
+      FileDrop__DatabasePath: /app/data/filedrop.db
+      FileDrop__ReservedFreeSpaceBytes: "107374182400"
+      FileDrop__SetupToken: "${FILEDROP_SETUP_TOKEN:?A FILEDROP_SETUP_TOKEN nincs beállítva}"
+    volumes:
+      - /srv/filedrop/data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s

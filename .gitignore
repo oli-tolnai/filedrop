@@ -1,0 +1,6 @@
+.env
+src/FileDrop.Api/data/
+src/FileDrop.Api/data-*/
+*.smoke-backup
+**/bin/
+**/obj/
