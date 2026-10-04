@@ -5,14 +5,15 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 ## Elkészült működés
 
 - Telefonon és laptopon használható reszponzív böngészős felület.
-- Közös LAN-listában látható, illetve linkkel, QR-kóddal vagy négyjegyű kóddal elérhető rejtett megosztás.
+- Bejelentkezés után látható közös LAN-lista, illetve linkkel, QR-kóddal vagy hat karakteres kóddal elérhető rejtett megosztás.
 - Lejárat: első sikeres letöltés, 15 perc, 1 óra (alapértelmezett), 24 óra, 7 nap vagy kézi visszavonás.
 - Valódi fájlfeltöltés folyamatjelzővel és letöltés eredeti fájlnéven.
 - Tulajdonosi és családtag-fiókok biztonságosan hash-elt jelszóval.
 - A fiókjelszó legalább 4 számjegy lehet; ez csak megbízható LAN-on kényelmes, Tailscale-es távoli használat előtt erősebb védelem szükséges.
+- A közös fájlok listája és közvetlen letöltése belépést kér; a kódos letöltés fiók nélkül is használható.
 - Egy fiókhoz több, külön megnevezett eszköz munkamenete tartozhat; minden eszköz ugyanazt a saját előzményt látja.
-- A tulajdonos új családtag-fiókot hozhat létre. A saját aktív megosztás visszavonható; a fizikai fájl törlődik, az előzmény megmarad.
-- Bejelentkezés nélkül is lehet LAN-on feltölteni, de az ilyen feltöltés utólag nem jelenik meg senki saját előzményeiben.
+- A tulajdonos külön adminisztrációs nézetben látja a családtag-fiókokat és új fiókot hozhat létre. A saját aktív megosztás visszavonható; a fizikai fájl törlődik, az előzmény megmarad.
+- A webalkalmazás PWA-ként telepíthető, és telepítés után a telefon megosztásmenüjéből fogadott fájlokat is előkészíti feltöltésre.
 - A kódpróbálkozás és a bejelentkezés sebességkorlátozott.
 - A lejárt fájlok és munkamenetek automatikusan takarítódnak, újraindítás után is.
 
@@ -50,6 +51,18 @@ A helyi fejlesztéshez az API indítása előtt adj meg külön egyszeri beáll�
 $env:FileDrop__SetupToken='csak-a-helyi-fejleszteshez'
 dotnet run --urls http://127.0.0.1:5199
 ```
+
+## Helyi név és PWA
+
+Az alkalmazás a `Host` fejléc alapján nem kötött IP-címhez, ezért a
+`filedrop.home.arpa:8090` cím is használható, ha a router vagy a helyi DNS ezt
+a nevet a `192.168.0.34` címre oldja fel. Az IP-cím továbbra is működik.
+
+A manifest, service worker és Web Share Target támogatás bekerült. A legtöbb
+telefonos böngésző PWA-telepítéshez HTTPS-t kér; a sima
+`http://192.168.0.34:8090` vagy `http://filedrop.home.arpa:8090` cím önmagában
+nem feltétlenül tekinthető telepíthető, biztonságos eredetnek. Ehhez később
+Tailscale Serve vagy helyi HTTPS-proxy szükséges.
 
 ## Docker
 

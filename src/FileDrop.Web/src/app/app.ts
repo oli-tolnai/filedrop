@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpEventType, HttpHeaders, HttpParams, 
 import { Component, inject, OnInit, signal } from '@angular/core';
 import * as QRCode from 'qrcode';
 
-type ViewName = 'files' | 'mine';
+type ViewName = 'files' | 'mine' | 'admin';
 type Visibility = 'shared' | 'code';
 
 interface StorageStatus {
@@ -42,6 +42,14 @@ interface OwnedShare {
   status: 'active' | 'expired' | 'deleted';
 }
 
+interface AdminUser {
+  id: string;
+  displayName: string;
+  isAdmin: boolean;
+  createdAtUtc: string;
+  activeSessionCount: number;
+}
+
 @Component({
   selector: 'app-root',
   styleUrl: './app.css',
@@ -55,7 +63,7 @@ export class App implements OnInit {
   protected readonly storageState = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly storageStatus = signal<StorageStatus | null>(null);
   protected readonly sharedFiles = signal<Share[]>([]);
-  protected readonly filesState = signal<'loading' | 'ready' | 'error'>('loading');
+  protected readonly filesState = signal<'loading' | 'ready' | 'unauthorized' | 'error'>('loading');
   protected readonly selectedFile = signal<File | null>(null);
   protected readonly visibility = signal<Visibility>('shared');
   protected readonly expiration = signal('1h');
@@ -67,6 +75,8 @@ export class App implements OnInit {
   protected readonly qrCodeDataUrl = signal('');
   protected readonly accountStatus = signal<AccountStatus | null>(null);
   protected readonly ownedShares = signal<OwnedShare[]>([]);
+  protected readonly adminUsers = signal<AdminUser[]>([]);
+  protected readonly adminState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   protected readonly accountBusy = signal(false);
 
   protected readonly expirationOptions = [
@@ -84,14 +94,16 @@ export class App implements OnInit {
       error: () => this.apiStatus.set('offline'),
     });
     this.loadStorage();
-    this.loadSharedFiles();
     this.loadAccount();
+    this.loadPendingCode();
+    void this.loadPendingShareFile();
   }
 
   protected selectView(view: ViewName): void {
     this.activeView.set(view);
     this.notice.set('');
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnedShares();
+    if (view === 'admin' && this.accountStatus()?.account?.isAdmin) this.loadAdminUsers();
   }
 
   protected submitSetup(event: SubmitEvent): void {
@@ -127,6 +139,7 @@ export class App implements OnInit {
       next: () => {
         this.notice.set('A családtag fiókja elkészült.');
         form.reset();
+        this.loadAdminUsers();
       },
       error: (error: HttpErrorResponse) => {
         this.notice.set(this.readError(error, 'A fiók létrehozása nem sikerült.'));
@@ -141,6 +154,10 @@ export class App implements OnInit {
       next: () => {
         this.accountStatus.update(value => value ? { ...value, account: null } : value);
         this.ownedShares.set([]);
+        this.sharedFiles.set([]);
+        this.filesState.set('unauthorized');
+        this.adminUsers.set([]);
+        this.activeView.set('files');
         this.notice.set('Kijelentkeztél.');
       },
       error: () => this.notice.set('A kijelentkezés nem sikerült.'),
@@ -190,7 +207,7 @@ export class App implements OnInit {
 
   protected updateCode(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const code = input.value.replace(/\D/g, '').slice(0, 4);
+    const code = input.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6);
     input.value = code;
     this.downloadCode.set(code);
     this.notice.set('');
@@ -198,6 +215,11 @@ export class App implements OnInit {
 
   protected requestUpload(): void {
     const file = this.selectedFile();
+    if (!this.accountStatus()?.account) {
+      this.notice.set('A feltöltéshez előbb be kell jelentkezni.');
+      this.activeView.set('mine');
+      return;
+    }
     if (!file || !this.canSelectedFileFit() || this.uploading()) return;
 
     this.uploading.set(true);
@@ -227,8 +249,9 @@ export class App implements OnInit {
           this.uploadProgress.set(100);
           this.createdShare.set(event.body);
           this.notice.set('A fájl feltöltése elkészült.');
-          void this.createQrCode(event.body.downloadUrl);
+          void this.createQrCode(this.getShareLink(event.body));
           this.loadSharedFiles();
+          this.loadOwnedShares();
           this.loadStorage();
         }
       },
@@ -241,7 +264,7 @@ export class App implements OnInit {
   }
 
   protected requestDownload(): void {
-    if (this.downloadCode().length !== 4) return;
+    if (this.downloadCode().length !== 6) return;
 
     this.http.post<Share>('/api/shares/resolve-code', { code: this.downloadCode() }).subscribe({
       next: (share) => {
@@ -259,7 +282,7 @@ export class App implements OnInit {
   }
 
   protected async copyShareLink(share: Share): Promise<void> {
-    const link = this.getAbsoluteDownloadUrl(share.downloadUrl);
+    const link = this.getShareLink(share);
     try {
       await navigator.clipboard.writeText(link);
     } catch {
@@ -273,6 +296,22 @@ export class App implements OnInit {
       input.remove();
     }
     this.notice.set('A letöltési linket a vágólapra másoltuk.');
+  }
+
+  protected async copyShareCode(code: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      const input = document.createElement('textarea');
+      input.value = code;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    this.notice.set('A megosztási kódot a vágólapra másoltuk.');
   }
 
   protected canSelectedFileFit(): boolean {
@@ -305,6 +344,21 @@ export class App implements OnInit {
     return new URL(downloadUrl, window.location.origin).toString();
   }
 
+  protected getShareLink(share: Share): string {
+    return share.accessCode
+      ? new URL(`/?code=${encodeURIComponent(share.accessCode)}`, window.location.origin).toString()
+      : this.getAbsoluteDownloadUrl(share.downloadUrl);
+  }
+
+  protected formatDate(timestamp: string): string {
+    const normalized = timestamp.endsWith('Z') ? timestamp : `${timestamp}Z`;
+    return new Intl.DateTimeFormat('hu-HU', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(normalized));
+  }
+
   private setSelectedFile(file: File | null): void {
     this.selectedFile.set(file);
     this.createdShare.set(null);
@@ -335,7 +389,10 @@ export class App implements OnInit {
         this.sharedFiles.set(files);
         this.filesState.set('ready');
       },
-      error: () => this.filesState.set('error'),
+      error: (error: HttpErrorResponse) => {
+        this.sharedFiles.set([]);
+        this.filesState.set(error.status === 401 ? 'unauthorized' : 'error');
+      },
     });
   }
 
@@ -343,9 +400,18 @@ export class App implements OnInit {
     this.http.get<AccountStatus>('/api/account').subscribe({
       next: (status) => {
         this.accountStatus.set(status);
-        if (status.account) this.loadOwnedShares();
+        if (status.account) {
+          this.loadOwnedShares();
+          this.loadSharedFiles();
+          if (status.account.isAdmin) this.loadAdminUsers();
+        } else {
+          this.filesState.set('unauthorized');
+        }
       },
-      error: () => this.accountStatus.set({ setupRequired: false, account: null }),
+      error: () => {
+        this.accountStatus.set({ setupRequired: false, account: null });
+        this.filesState.set('unauthorized');
+      },
     });
   }
 
@@ -356,6 +422,68 @@ export class App implements OnInit {
     });
   }
 
+  private loadAdminUsers(): void {
+    if (!this.accountStatus()?.account?.isAdmin) return;
+    this.adminState.set('loading');
+    this.http.get<AdminUser[]>('/api/admin/users').subscribe({
+      next: (users) => {
+        this.adminUsers.set(users);
+        this.adminState.set('ready');
+      },
+      error: () => this.adminState.set('error'),
+    });
+  }
+
+  private loadPendingCode(): void {
+    const code = new URLSearchParams(window.location.search).get('code')?.trim().toUpperCase();
+    if (!code || !/^[A-Z0-9]{6}$/.test(code)) return;
+    this.downloadCode.set(code);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    window.setTimeout(() => this.requestDownload(), 0);
+  }
+
+  private async loadPendingShareFile(): Promise<void> {
+    if (!new URLSearchParams(window.location.search).has('shared')) return;
+    try {
+      const db = await this.openShareDatabase();
+      const entry = await new Promise<{ name: string; type: string; lastModified: number; blob: Blob } | undefined>((resolve, reject) => {
+        const request = db.transaction('pending', 'readonly').objectStore('pending').get('latest');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      if (!entry) return;
+      const file = new File([entry.blob], entry.name, { type: entry.type, lastModified: entry.lastModified });
+      this.setSelectedFile(file);
+      this.notice.set('A megosztásmenüből érkező fájl készen áll a feltöltésre.');
+      await this.deletePendingShareFile();
+    } catch {
+      this.notice.set('A megosztásmenüből érkező fájl nem tölthető be.');
+    } finally {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
+
+  private openShareDatabase(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('filedrop-share-target', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('pending', { keyPath: 'id' });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  private async deletePendingShareFile(): Promise<void> {
+    const db = await this.openShareDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('pending', 'readwrite');
+      transaction.objectStore('pending').delete('latest');
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  }
+
   private accountRequest(url: string, body: object, successMessage: string): void {
     this.accountBusy.set(true);
     this.http.post<Account>(url, body).subscribe({
@@ -363,6 +491,8 @@ export class App implements OnInit {
         this.accountStatus.set({ setupRequired: false, account });
         this.notice.set(successMessage);
         this.loadOwnedShares();
+        this.loadSharedFiles();
+        if (account.isAdmin) this.loadAdminUsers();
       },
       error: (error: HttpErrorResponse) => {
         this.notice.set(error.status === 401

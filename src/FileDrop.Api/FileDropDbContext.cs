@@ -14,7 +14,7 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
         share.Property(item => item.StoredFileName).HasMaxLength(80);
         share.Property(item => item.ContentType).HasMaxLength(200);
         share.Property(item => item.Visibility).HasMaxLength(20);
-        share.Property(item => item.AccessCode).HasMaxLength(4);
+        share.Property(item => item.AccessCode).HasMaxLength(6);
         share.HasIndex(item => item.AccessCode).IsUnique();
         share.HasIndex(item => item.ExpiresAtUtc);
 

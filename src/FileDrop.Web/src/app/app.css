@@ -245,6 +245,7 @@ h1 {
 
 .view-tabs {
   display: flex;
+  overflow-x: auto;
   gap: 8px;
   margin: 36px 0 22px;
   border-bottom: 1px solid var(--line);
@@ -1016,6 +1017,13 @@ h1 {
   display: grid;
 }
 
+.own-share-list {
+  max-height: 430px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--blue) var(--pale-blue);
+}
+
 .file-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(120px, auto) auto;
@@ -1063,6 +1071,103 @@ h1 {
 .file-row-expiry span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.owned-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--blue) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .05em;
+}
+
+.owned-code strong {
+  color: var(--blue) !important;
+  font-size: 13px !important;
+  letter-spacing: .12em;
+}
+
+.inline-copy {
+  padding: 2px 6px;
+  border: 1px solid #b7d1df;
+  border-radius: 5px;
+  color: var(--blue);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.inline-copy:hover {
+  color: var(--white);
+  background: var(--blue);
+}
+
+.admin-page {
+  display: grid;
+  gap: 24px;
+}
+
+.admin-page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 4px 0 2px;
+}
+
+.admin-page-heading h2 {
+  margin: 4px 0 7px;
+  color: var(--ink);
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -.04em;
+}
+
+.admin-page-heading p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, .8fr) minmax(0, 1.2fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.admin-user-list {
+  max-height: 430px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-user-row:last-child { border-bottom: 0; }
+
+.admin-user-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-user-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-user-row > strong {
+  flex: 0 0 auto;
+  color: var(--blue);
+  font-size: 13px;
 }
 
 .file-row-expiry strong {
@@ -1238,6 +1343,8 @@ input:focus-visible {
   }
 
   .account-form.compact { grid-template-columns: 1fr; }
+
+  .admin-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 600px) {
@@ -1330,11 +1437,15 @@ input:focus-visible {
   }
 
   .view-tabs button {
+    flex: 0 0 auto;
     min-height: 48px;
     gap: 7px;
     padding: 0 9px;
     font-size: 14px;
   }
+
+  .admin-page-heading { align-items: flex-start; flex-direction: column; }
+  .own-share-list { max-height: 360px; }
 
   .storage-summary {
     gap: 16px;

@@ -9,6 +9,7 @@ public sealed record CurrentAccount(Guid Id, string DisplayName, bool IsAdmin, s
 public sealed class AccountSessionService(IPasswordHasher<AppUser> passwordHasher)
 {
     private const string CookieName = "filedrop_session";
+    private static readonly TimeSpan SessionLifetime = TimeSpan.FromDays(3650);
 
     public async Task<CurrentAccount?> GetCurrentAsync(
         HttpContext context,
@@ -50,10 +51,10 @@ public sealed class AccountSessionService(IPasswordHasher<AppUser> passwordHashe
             TokenHash = HashToken(token),
             DeviceName = deviceName,
             CreatedAtUtc = now,
-            ExpiresAtUtc = now.AddDays(90),
+            ExpiresAtUtc = now.Add(SessionLifetime),
         });
         await db.SaveChangesAsync(cancellationToken);
-        context.Response.Cookies.Append(CookieName, token, CookieOptions(context, now.AddDays(90)));
+        context.Response.Cookies.Append(CookieName, token, CookieOptions(context, now.Add(SessionLifetime)));
         return new CurrentAccount(user.Id, user.DisplayName, user.IsAdmin, deviceName);
     }
 
@@ -103,6 +104,7 @@ public static class AccountEndpoints
         endpoints.MapPost("/api/account/setup", SetupAsync).RequireRateLimiting("account");
         endpoints.MapPost("/api/account/login", LoginAsync).RequireRateLimiting("account");
         endpoints.MapPost("/api/account/logout", LogoutAsync);
+        endpoints.MapGet("/api/admin/users", ListUsersAsync);
         endpoints.MapPost("/api/admin/users", CreateUserAsync).RequireRateLimiting("account");
         return endpoints;
     }
@@ -219,6 +221,34 @@ public static class AccountEndpoints
         return Results.Created($"/api/admin/users/{user.Id}", new { user.Id, user.DisplayName });
     }
 
+    private static async Task<IResult> ListUsersAsync(
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        if (!current.IsAdmin) return Results.Forbid();
+
+        var users = await db.Users
+            .AsNoTracking()
+            .OrderBy(item => item.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        var sessionCounts = await db.UserSessions
+            .AsNoTracking()
+            .GroupBy(item => item.UserId)
+            .Select(group => new { UserId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(item => item.UserId, item => item.Count, cancellationToken);
+
+        return Results.Ok(users.Select(user => new AdminUserDto(
+            user.Id,
+            user.DisplayName,
+            user.IsAdmin,
+            user.CreatedAtUtc,
+            sessionCounts.GetValueOrDefault(user.Id))));
+    }
+
     private static AppUser NewUser(string displayName, bool isAdmin) => new()
     {
         Id = Guid.NewGuid(),
@@ -245,3 +275,4 @@ public sealed record AccountStatusDto(bool SetupRequired, CurrentAccount? Accoun
 public sealed record SetupAccountRequest(string? DisplayName, string? Password, string? DeviceName, string? SetupToken);
 public sealed record LoginRequest(string? DisplayName, string? Password, string? DeviceName);
 public sealed record CreateUserRequest(string? DisplayName, string? Password);
+public sealed record AdminUserDto(Guid Id, string DisplayName, bool IsAdmin, DateTime CreatedAtUtc, int ActiveSessionCount);

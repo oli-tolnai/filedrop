@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 public static class ShareEndpoints
 {
     private static readonly SemaphoreSlim AccessCodeGate = new(1, 1);
+    private const string ShareCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     public static IEndpointRouteBuilder MapShareEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -18,10 +19,18 @@ public static class ShareEndpoints
         return endpoints;
     }
 
-    private static async Task<Ok<IReadOnlyList<ShareDto>>> ListSharedFilesAsync(
+    private static async Task<IResult> ListSharedFilesAsync(
+        HttpContext context,
         FileDropDbContext db,
+        AccountSessionService sessions,
         CancellationToken cancellationToken)
     {
+        var account = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (account is null)
+        {
+            return TypedResults.Unauthorized();
+        }
+
         var now = DateTime.UtcNow;
         var files = await db.SharedFiles
             .AsNoTracking()
@@ -32,7 +41,7 @@ public static class ShareEndpoints
             .OrderByDescending(file => file.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
-        return TypedResults.Ok<IReadOnlyList<ShareDto>>(files.Select(ToDto).ToList());
+        return Results.Ok<IReadOnlyList<ShareDto>>(files.Select(ToDto).ToList());
     }
 
     private static async Task<IResult> CreateShareAsync(
@@ -62,6 +71,12 @@ public static class ShareEndpoints
         if (!TryGetExpiration(expiration, out var expiresAtUtc, out var deleteAfterFirstDownload))
         {
             return Results.BadRequest(new ApiError("Ismeretlen lejárati beállítás."));
+        }
+
+        var owner = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (owner is null)
+        {
+            return Results.Unauthorized();
         }
 
         var contentLength = request.ContentLength;
@@ -126,7 +141,6 @@ public static class ShareEndpoints
 
             File.Move(temporaryFilePath, finalFilePath);
 
-            var owner = await sessions.GetCurrentAsync(context, db, cancellationToken);
             var share = new SharedFile
             {
                 Id = id,
@@ -186,10 +200,12 @@ public static class ShareEndpoints
         CancellationToken cancellationToken)
     {
         var code = request.Code?.Trim();
-        if (code is null || code.Length != 4 || code.Any(character => !char.IsAsciiDigit(character)))
+        if (code is null || code.Length != 6 || code.Any(character => !char.IsAsciiLetterOrDigit(character)))
         {
-            return Results.BadRequest(new ApiError("A megosztási kód négy számjegyből áll."));
+            return Results.BadRequest(new ApiError("A megosztási kód 6 betűből és/vagy számból áll."));
         }
+
+        code = code.ToUpperInvariant();
 
         var now = DateTime.UtcNow;
         var share = await db.SharedFiles
@@ -208,6 +224,7 @@ public static class ShareEndpoints
         Guid id,
         HttpContext context,
         FileDropDbContext db,
+        AccountSessionService sessions,
         StorageCapacityService storage,
         IServiceScopeFactory scopeFactory,
         CancellationToken cancellationToken)
@@ -222,6 +239,12 @@ public static class ShareEndpoints
             || (share.ExpiresAtUtc is not null && share.ExpiresAtUtc <= now))
         {
             return Results.NotFound(new ApiError("A fájl nem található vagy már lejárt."));
+        }
+
+        if (share.Visibility == "shared"
+            && await sessions.GetCurrentAsync(context, db, cancellationToken) is null)
+        {
+            return Results.Unauthorized();
         }
 
         var filePath = Path.Combine(storage.StoragePath, share.StoredFileName);
@@ -374,9 +397,15 @@ public static class ShareEndpoints
         FileDropDbContext db,
         CancellationToken cancellationToken)
     {
+        var codeChars = new char[6];
         for (var attempt = 0; attempt < 100; attempt++)
         {
-            var code = RandomNumberGenerator.GetInt32(10_000).ToString("D4");
+            for (var index = 0; index < codeChars.Length; index++)
+            {
+                codeChars[index] = ShareCodeAlphabet[RandomNumberGenerator.GetInt32(ShareCodeAlphabet.Length)];
+            }
+
+            var code = new string(codeChars);
             if (!await db.SharedFiles.AnyAsync(file => file.AccessCode == code, cancellationToken))
             {
                 return code;
