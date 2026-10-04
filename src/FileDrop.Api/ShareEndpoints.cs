@@ -200,9 +200,9 @@ public static class ShareEndpoints
         CancellationToken cancellationToken)
     {
         var code = request.Code?.Trim();
-        if (code is null || code.Length != 6 || code.Any(character => !char.IsAsciiLetterOrDigit(character)))
+        if (code is null || (code.Length != 4 && code.Length != 6) || code.Any(character => !char.IsAsciiLetterOrDigit(character)))
         {
-            return Results.BadRequest(new ApiError("A megosztási kód 6 betűből és/vagy számból áll."));
+            return Results.BadRequest(new ApiError("Az új megosztási kód 6 betűből és/vagy számból áll."));
         }
 
         code = code.ToUpperInvariant();

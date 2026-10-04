@@ -264,7 +264,7 @@ export class App implements OnInit {
   }
 
   protected requestDownload(): void {
-    if (this.downloadCode().length !== 6) return;
+    if (![4, 6].includes(this.downloadCode().length)) return;
 
     this.http.post<Share>('/api/shares/resolve-code', { code: this.downloadCode() }).subscribe({
       next: (share) => {
@@ -275,6 +275,10 @@ export class App implements OnInit {
         this.notice.set(this.readError(error, 'A megosztási kód nem használható.'));
       },
     });
+  }
+
+  protected canResolveCode(): boolean {
+    return [4, 6].includes(this.downloadCode().length);
   }
 
   protected downloadShare(share: Share): void {
