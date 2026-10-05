@@ -66,7 +66,7 @@
       @if (storageStatus(); as storage) {
         <dl class="storage-values">
           <div><dt>Fájlok</dt><dd>{{ formatSize(storage.fileDropUsedBytes) }}</dd></div>
-          <div class="storage-primary"><dt>Még feltölthető</dt><dd>{{ formatSize(storage.uploadCapacityBytes) }}</dd></div>
+          <div class="storage-primary"><dt><span class="storage-label-wide">Még feltölthető</span><span class="storage-label-short">Szabad</span></dt><dd>{{ formatSize(storage.uploadCapacityBytes) }}</dd></div>
         </dl>
       } @else if (storageState() === 'error') {
         <p class="storage-message error">A tárhelyadatok most nem olvashatók.</p>
