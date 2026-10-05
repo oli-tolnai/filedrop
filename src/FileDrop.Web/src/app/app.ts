@@ -15,9 +15,12 @@ interface StorageStatus {
 interface Share {
   id: string;
   fileName: string;
+  title: string | null;
+  note: string | null;
   sizeBytes: number;
   visibility: Visibility;
   accessCode: string | null;
+  ownerDisplayName: string | null;
   createdAtUtc: string;
   expiresAtUtc: string | null;
   deleteAfterFirstDownload: boolean;
@@ -65,6 +68,8 @@ export class App implements OnInit {
   protected readonly sharedFiles = signal<Share[]>([]);
   protected readonly filesState = signal<'loading' | 'ready' | 'unauthorized' | 'error'>('loading');
   protected readonly selectedFile = signal<File | null>(null);
+  protected readonly shareTitle = signal('');
+  protected readonly shareNote = signal('');
   protected readonly visibility = signal<Visibility>('shared');
   protected readonly expiration = signal('1h');
   protected readonly downloadCode = signal('');
@@ -75,6 +80,7 @@ export class App implements OnInit {
   protected readonly qrCodeDataUrl = signal('');
   protected readonly accountStatus = signal<AccountStatus | null>(null);
   protected readonly ownedShares = signal<OwnedShare[]>([]);
+  protected readonly showHistory = signal(false);
   protected readonly adminUsers = signal<AdminUser[]>([]);
   protected readonly adminState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   protected readonly accountBusy = signal(false);
@@ -181,6 +187,16 @@ export class App implements OnInit {
     return status === 'active' ? 'Aktív' : status === 'expired' ? 'Lejárt' : 'Törölve';
   }
 
+  protected visibleOwnedShares(): OwnedShare[] {
+    return this.showHistory()
+      ? this.ownedShares()
+      : this.ownedShares().filter(item => item.status === 'active');
+  }
+
+  protected toggleHistory(): void {
+    this.showHistory.update(value => !value);
+  }
+
   protected selectFile(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.setSelectedFile(input.files?.item(0) ?? null);
@@ -213,6 +229,14 @@ export class App implements OnInit {
     this.notice.set('');
   }
 
+  protected updateShareTitle(event: Event): void {
+    this.shareTitle.set((event.target as HTMLInputElement).value);
+  }
+
+  protected updateShareNote(event: Event): void {
+    this.shareNote.set((event.target as HTMLTextAreaElement).value);
+  }
+
   protected requestUpload(): void {
     const file = this.selectedFile();
     if (!this.accountStatus()?.account) {
@@ -231,7 +255,9 @@ export class App implements OnInit {
     const parameters = new HttpParams()
       .set('fileName', file.name)
       .set('visibility', this.visibility())
-      .set('expiration', this.expiration());
+      .set('expiration', this.expiration())
+      .set('title', this.shareTitle())
+      .set('note', this.shareNote());
     const request = new HttpRequest('POST', `/api/shares?${parameters.toString()}`, file, {
       headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
       reportProgress: true,
@@ -318,6 +344,13 @@ export class App implements OnInit {
     this.notice.set('A megosztási kódot a vágólapra másoltuk.');
   }
 
+  protected restoreShareTools(share: Share): void {
+    this.createdShare.set(share);
+    this.notice.set('A megosztás linkje és QR-kódja újra megnyitható.');
+    void this.createQrCode(this.getShareLink(share));
+    document.querySelector('.upload-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   protected canSelectedFileFit(): boolean {
     const file = this.selectedFile();
     const storage = this.storageStatus();
@@ -365,6 +398,8 @@ export class App implements OnInit {
 
   private setSelectedFile(file: File | null): void {
     this.selectedFile.set(file);
+    this.shareTitle.set('');
+    this.shareNote.set('');
     this.createdShare.set(null);
     this.qrCodeDataUrl.set('');
     this.notice.set('');
@@ -440,7 +475,7 @@ export class App implements OnInit {
 
   private loadPendingCode(): void {
     const code = new URLSearchParams(window.location.search).get('code')?.trim().toUpperCase();
-    if (!code || !/^[A-Z0-9]{6}$/.test(code)) return;
+    if (!code || !/^[A-Z0-9]{4,6}$/.test(code)) return;
     this.downloadCode.set(code);
     window.history.replaceState({}, document.title, window.location.pathname);
     window.setTimeout(() => this.requestDownload(), 0);

@@ -13,6 +13,8 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
         share.Property(item => item.OriginalFileName).HasMaxLength(255);
         share.Property(item => item.StoredFileName).HasMaxLength(80);
         share.Property(item => item.ContentType).HasMaxLength(200);
+        share.Property(item => item.Title).HasMaxLength(120);
+        share.Property(item => item.Note).HasMaxLength(1000);
         share.Property(item => item.Visibility).HasMaxLength(20);
         share.Property(item => item.AccessCode).HasMaxLength(6);
         share.HasIndex(item => item.AccessCode).IsUnique();
@@ -33,7 +35,7 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
         session.HasIndex(item => item.ExpiresAtUtc);
         session.HasOne<AppUser>().WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Cascade);
 
-        share.HasOne<AppUser>().WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
+        share.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 
@@ -41,6 +43,8 @@ public sealed class SharedFile
 {
     public Guid Id { get; set; }
     public required string OriginalFileName { get; set; }
+    public string? Title { get; set; }
+    public string? Note { get; set; }
     public required string StoredFileName { get; set; }
     public required string ContentType { get; set; }
     public long SizeBytes { get; set; }
@@ -53,6 +57,7 @@ public sealed class SharedFile
     public DateTime? FileDeletedAtUtc { get; set; }
     public int DownloadCount { get; set; }
     public Guid? OwnerUserId { get; set; }
+    public AppUser? Owner { get; set; }
 }
 
 public sealed class AppUser

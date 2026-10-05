@@ -13,6 +13,8 @@ public static class ShareEndpoints
         endpoints.MapPost("/api/shares", CreateShareAsync);
         endpoints.MapPost("/api/shares/resolve-code", ResolveCodeAsync)
             .RequireRateLimiting("share-code");
+        endpoints.MapGet("/api/shares/code/{code}/download", DownloadByCodeAsync)
+            .RequireRateLimiting("share-code");
         endpoints.MapGet("/api/shares/{id:guid}/download", DownloadAsync);
         endpoints.MapGet("/api/me/shares", ListMySharesAsync);
         endpoints.MapDelete("/api/me/shares/{id:guid}", DeleteMyShareAsync);
@@ -33,7 +35,7 @@ public static class ShareEndpoints
 
         var now = DateTime.UtcNow;
         var files = await db.SharedFiles
-            .AsNoTracking()
+            .Include(file => file.Owner)
             .Where(file => file.Visibility == "shared"
                 && file.FileDeletedAtUtc == null
                 && file.ConsumedAtUtc == null
@@ -41,7 +43,9 @@ public static class ShareEndpoints
             .OrderByDescending(file => file.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
-        return Results.Ok<IReadOnlyList<ShareDto>>(files.Select(ToDto).ToList());
+        await EnsureAccessCodesAsync(files, db, cancellationToken);
+
+        return Results.Ok<IReadOnlyList<ShareDto>>(files.Select(file => ToDto(file)).ToList());
     }
 
     private static async Task<IResult> CreateShareAsync(
@@ -49,6 +53,8 @@ public static class ShareEndpoints
         string fileName,
         string visibility,
         string expiration,
+        string? title,
+        string? note,
         FileDropDbContext db,
         StorageCapacityService storage,
         UploadReservationService reservations,
@@ -71,6 +77,18 @@ public static class ShareEndpoints
         if (!TryGetExpiration(expiration, out var expiresAtUtc, out var deleteAfterFirstDownload))
         {
             return Results.BadRequest(new ApiError("Ismeretlen lejárati beállítás."));
+        }
+
+        var safeTitle = SanitizeMetadata(title, 120);
+        if (!string.IsNullOrWhiteSpace(title) && safeTitle is null)
+        {
+            return Results.BadRequest(new ApiError("A cím legfeljebb 120 karakter lehet."));
+        }
+
+        var safeNote = SanitizeMetadata(note, 1000);
+        if (!string.IsNullOrWhiteSpace(note) && safeNote is null)
+        {
+            return Results.BadRequest(new ApiError("A megjegyzés legfeljebb 1000 karakter lehet."));
         }
 
         var owner = await sessions.GetCurrentAsync(context, db, cancellationToken);
@@ -145,6 +163,8 @@ public static class ShareEndpoints
             {
                 Id = id,
                 OriginalFileName = safeFileName,
+                Title = safeTitle,
+                Note = safeNote,
                 StoredFileName = storedFileName,
                 ContentType = SanitizeContentType(request.ContentType),
                 SizeBytes = writtenBytes,
@@ -153,27 +173,20 @@ public static class ShareEndpoints
                 CreatedAtUtc = DateTime.UtcNow,
                 ExpiresAtUtc = expiresAtUtc,
                 DeleteAfterFirstDownload = deleteAfterFirstDownload,
-                OwnerUserId = owner?.Id,
+                OwnerUserId = owner.Id,
+                Owner = null,
             };
 
-            if (visibility == "code")
+            await AccessCodeGate.WaitAsync(cancellationToken);
+            try
             {
-                await AccessCodeGate.WaitAsync(cancellationToken);
-                try
-                {
-                    share.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
-                    db.SharedFiles.Add(share);
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                finally
-                {
-                    AccessCodeGate.Release();
-                }
-            }
-            else
-            {
+                share.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
                 db.SharedFiles.Add(share);
                 await db.SaveChangesAsync(cancellationToken);
+            }
+            finally
+            {
+                AccessCodeGate.Release();
             }
 
             return Results.Created($"/api/shares/{share.Id}/download", ToDto(share));
@@ -209,6 +222,7 @@ public static class ShareEndpoints
 
         var now = DateTime.UtcNow;
         var share = await db.SharedFiles
+            .Include(file => file.Owner)
             .AsNoTracking()
             .FirstOrDefaultAsync(file => file.AccessCode == code
                 && file.FileDeletedAtUtc == null
@@ -217,7 +231,7 @@ public static class ShareEndpoints
 
         return share is null
             ? Results.NotFound(new ApiError("Nincs aktív megosztás ezzel a kóddal."))
-            : Results.Ok(ToDto(share));
+            : Results.Ok(ToDto(share, codeDownload: true));
     }
 
     private static async Task<IResult> DownloadAsync(
@@ -227,7 +241,8 @@ public static class ShareEndpoints
         AccountSessionService sessions,
         StorageCapacityService storage,
         IServiceScopeFactory scopeFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowAnonymousCode = false)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var now = DateTime.UtcNow;
@@ -242,6 +257,7 @@ public static class ShareEndpoints
         }
 
         if (share.Visibility == "shared"
+            && !allowAnonymousCode
             && await sessions.GetCurrentAsync(context, db, cancellationToken) is null)
         {
             return Results.Unauthorized();
@@ -287,17 +303,49 @@ public static class ShareEndpoints
             enableRangeProcessing: !share.DeleteAfterFirstDownload);
     }
 
-    private static ShareDto ToDto(SharedFile file) => new(
+    private static async Task<IResult> DownloadByCodeAsync(
+        string code,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        StorageCapacityService storage,
+        IServiceScopeFactory scopeFactory,
+        CancellationToken cancellationToken)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        if ((normalized.Length != 4 && normalized.Length != 6)
+            || normalized.Any(character => !char.IsAsciiLetterOrDigit(character)))
+        {
+            return Results.NotFound(new ApiError("A megosztás nem található."));
+        }
+
+        var shareExists = await db.SharedFiles.AnyAsync(file => file.AccessCode == normalized
+            && file.FileDeletedAtUtc == null
+            && file.ConsumedAtUtc == null
+            && (file.ExpiresAtUtc == null || file.ExpiresAtUtc > DateTime.UtcNow), cancellationToken);
+        if (!shareExists) return Results.NotFound(new ApiError("A megosztás nem található vagy már lejárt."));
+
+        var share = await db.SharedFiles.AsNoTracking()
+            .FirstAsync(file => file.AccessCode == normalized, cancellationToken);
+        return await DownloadAsync(share.Id, context, db, sessions, storage, scopeFactory, cancellationToken, allowAnonymousCode: true);
+    }
+
+    private static ShareDto ToDto(SharedFile file, bool codeDownload = false) => new(
         file.Id,
         file.OriginalFileName,
+        file.Title,
+        file.Note,
         file.SizeBytes,
         file.Visibility,
         file.AccessCode,
+        file.Owner?.DisplayName,
         file.CreatedAtUtc,
         file.ExpiresAtUtc,
         file.DeleteAfterFirstDownload,
         file.DownloadCount,
-        $"/api/shares/{file.Id}/download");
+        codeDownload && file.AccessCode is not null
+            ? $"/api/shares/code/{file.AccessCode}/download"
+            : $"/api/shares/{file.Id}/download");
 
     private static async Task<IResult> ListMySharesAsync(
         HttpContext context,
@@ -308,11 +356,13 @@ public static class ShareEndpoints
         var account = await sessions.GetCurrentAsync(context, db, cancellationToken);
         if (account is null) return Results.Unauthorized();
 
-        var files = await db.SharedFiles.AsNoTracking()
+        var files = await db.SharedFiles
+            .Include(file => file.Owner)
             .Where(file => file.OwnerUserId == account.Id)
             .OrderByDescending(file => file.CreatedAtUtc)
             .Take(250)
             .ToListAsync(cancellationToken);
+        await EnsureAccessCodesAsync(files, db, cancellationToken);
         return Results.Ok(files.Select(file => new OwnedShareDto(
             ToDto(file),
             file.FileDeletedAtUtc is not null || file.ConsumedAtUtc is not null
@@ -365,6 +415,13 @@ public static class ShareEndpoints
         return contentType;
     }
 
+    private static string? SanitizeMetadata(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength && !trimmed.Any(char.IsControl) ? trimmed : null;
+    }
+
     private static bool TryGetExpiration(
         string value,
         out DateTime? expiresAtUtc,
@@ -415,6 +472,36 @@ public static class ShareEndpoints
         throw new InvalidOperationException("Nem sikerült szabad megosztási kódot létrehozni.");
     }
 
+    private static async Task EnsureAccessCodesAsync(
+        IReadOnlyCollection<SharedFile> files,
+        FileDropDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var missing = files
+            .Where(file => file.AccessCode is null
+                && file.Visibility is ("shared" or "code")
+                && file.FileDeletedAtUtc is null
+                && file.ConsumedAtUtc is null)
+            .ToList();
+        if (missing.Count == 0) return;
+
+        await AccessCodeGate.WaitAsync(cancellationToken);
+        try
+        {
+            foreach (var file in missing)
+            {
+                file.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
+                db.Entry(file).State = EntityState.Modified;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            AccessCodeGate.Release();
+        }
+    }
+
     internal static void SafeDelete(string path)
     {
         try
@@ -440,9 +527,12 @@ public sealed record ApiError(string Message);
 public sealed record ShareDto(
     Guid Id,
     string FileName,
+    string? Title,
+    string? Note,
     long SizeBytes,
     string Visibility,
     string? AccessCode,
+    string? OwnerDisplayName,
     DateTime CreatedAtUtc,
     DateTime? ExpiresAtUtc,
     bool DeleteAfterFirstDownload,

@@ -11,8 +11,10 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 - Tulajdonosi és családtag-fiókok biztonságosan hash-elt jelszóval.
 - A fiókjelszó legalább 4 számjegy lehet; ez csak megbízható LAN-on kényelmes, Tailscale-es távoli használat előtt erősebb védelem szükséges.
 - A közös fájlok listája és közvetlen letöltése belépést kér; a kódos letöltés fiók nélkül is használható.
+- A közös és a csak kódos megosztások is kapnak 6 karakteres letöltési kódot; a közös fájl a belépett listában és kóddal vendégnek is elérhető.
 - Egy fiókhoz több, külön megnevezett eszköz munkamenete tartozhat; minden eszköz ugyanazt a saját előzményt látja.
 - A tulajdonos külön adminisztrációs nézetben látja a családtag-fiókokat és új fiókot hozhat létre. A saját aktív megosztás visszavonható; a fizikai fájl törlődik, az előzmény megmarad.
+- A feltöltéshez opcionális megnevezés és megjegyzés, a közös listában pedig feltöltőnév tartozhat.
 - A webalkalmazás PWA-ként telepíthető, és telepítés után a telefon megosztásmenüjéből fogadott fájlokat is előkészíti feltöltésre.
 - A kódpróbálkozás és a bejelentkezés sebességkorlátozott.
 - A lejárt fájlok és munkamenetek automatikusan takarítódnak, újraindítás után is.

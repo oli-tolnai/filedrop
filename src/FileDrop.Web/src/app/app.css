@@ -582,6 +582,42 @@ h1 {
   border: 0;
 }
 
+.share-metadata {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 12px;
+  margin: 18px 0 20px;
+}
+
+.share-metadata label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.share-metadata label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.share-metadata input,
+.share-metadata textarea {
+  width: 100%;
+  border: 1px solid #aebfc8;
+  border-radius: 8px;
+  padding: 10px 11px;
+  color: var(--ink);
+  background: var(--white);
+  font-size: 14px;
+  font-weight: 450;
+  resize: vertical;
+}
+
+.share-metadata textarea { min-height: 43px; }
+
 .visibility-fieldset legend,
 .expiry-label {
   margin-bottom: 10px;
@@ -1104,6 +1140,50 @@ h1 {
   background: var(--blue);
 }
 
+.file-note {
+  overflow: hidden;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-tools-button,
+.history-toggle {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #b7d1df;
+  border-radius: 7px;
+  color: var(--blue);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.file-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 7px;
+}
+
+.share-tools-button:hover,
+.history-toggle:hover,
+.history-toggle.selected {
+  color: var(--white);
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.history-toggle svg { width: 16px; height: 16px; }
+
 .admin-page {
   display: grid;
   gap: 24px;
@@ -1137,9 +1217,7 @@ h1 {
 }
 
 .admin-user-list {
-  max-height: 430px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  display: grid;
 }
 
 .admin-user-row {
@@ -1345,6 +1423,7 @@ input:focus-visible {
   .account-form.compact { grid-template-columns: 1fr; }
 
   .admin-grid { grid-template-columns: 1fr; }
+  .share-metadata { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 600px) {
@@ -1577,6 +1656,11 @@ input:focus-visible {
 
   .file-row-expiry {
     display: none;
+  }
+
+  .file-row-actions {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
   }
 
   .download-button {

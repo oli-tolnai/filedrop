@@ -57,7 +57,9 @@ using (var scope = app.Services.CreateScope())
     var storage = scope.ServiceProvider.GetRequiredService<StorageCapacityService>();
     Directory.CreateDirectory(storage.StoragePath);
     Directory.CreateDirectory(storage.TemporaryPath);
-    scope.ServiceProvider.GetRequiredService<FileDropDbContext>().Database.EnsureCreated();
+    var db = scope.ServiceProvider.GetRequiredService<FileDropDbContext>();
+    db.Database.EnsureCreated();
+    EnsureShareMetadataColumns(db);
 }
 
 app.UseRateLimiter();
@@ -79,3 +81,24 @@ if (hasBundledWebApp)
 }
 
 app.Run();
+
+static void EnsureShareMetadataColumns(FileDropDbContext db)
+{
+    try
+    {
+        db.Database.ExecuteSqlRaw("ALTER TABLE SharedFiles ADD COLUMN Title TEXT NULL;");
+    }
+    catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+    {
+        // Existing installations already have this column.
+    }
+
+    try
+    {
+        db.Database.ExecuteSqlRaw("ALTER TABLE SharedFiles ADD COLUMN Note TEXT NULL;");
+    }
+    catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+    {
+        // Existing installations already have this column.
+    }
+}
