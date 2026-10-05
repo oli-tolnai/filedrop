@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+def releasePropertiesFile = new File(System.getProperty('user.home'), 'AndroidKeys/filedrop-release.properties')
+def releaseProperties = new Properties()
+if (releasePropertiesFile.exists()) {
+    releasePropertiesFile.withInputStream { releaseProperties.load(it) }
+}
+
+def signingKeys = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+def hasReleaseSigning = signingKeys.every { releaseProperties.getProperty(it)?.trim() }
+
 android {
     namespace = "hu.tolnaioli.filedrop"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,11 +25,29 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseProperties.getProperty('storeFile'))
+                storePassword releaseProperties.getProperty('storePassword')
+                keyAlias releaseProperties.getProperty('keyAlias')
+                keyPassword releaseProperties.getProperty('keyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def runsReleaseTask = graph.allTasks.any { it.name.toLowerCase().contains('release') }
+    if (runsReleaseTask && !hasReleaseSigning) {
+        throw new GradleException("A kiadási aláírás hiányzik. Hozd létre: ${releasePropertiesFile}")
     }
 }
 

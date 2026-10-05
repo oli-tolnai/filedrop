@@ -2,5 +2,9 @@
 src/FileDrop.Api/data/
 src/FileDrop.Api/data-*/
 *.smoke-backup
+*.jks
+*.keystore
+**/release-signing.properties
+**/local.properties
 **/bin/
 **/obj/

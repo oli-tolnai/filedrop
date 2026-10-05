@@ -1,0 +1,7 @@
+# Ezt a fájlt ne nevezd át és ne töltsd ki a repóban.
+# A valódi beállítás helye: C:/Users/olito/AndroidKeys/filedrop-release.properties
+# A valódi fájl nem kerülhet Gitbe vagy a Dell szerverre.
+storeFile=C:/Users/olito/AndroidKeys/filedrop-release.jks
+storePassword=IDE_JON_A_JELSZO
+keyAlias=filedrop
+keyPassword=IDE_JON_A_KULCS_JELSZAVA
