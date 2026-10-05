@@ -736,7 +736,11 @@ export class App implements OnInit, OnDestroy {
 
     const url = this.getAbsoluteDownloadUrl(release.downloadUrl);
     if (this.isNativeApp) {
-      void ShareReceiver.openExternalUrl({ url }).catch(() => window.location.assign(url));
+      const fileName = `FileDrop-${release.versionName}.apk`;
+      void ShareReceiver.downloadFile({ url, fileName })
+        .then(() => this.notice.set(`${release.versionName} letöltése elindult. A telepítéshez nyisd meg az Android értesítését.`))
+        .catch(() => ShareReceiver.openExternalUrl({ url }))
+        .catch(() => window.location.assign(url));
       return;
     }
     window.location.assign(url);

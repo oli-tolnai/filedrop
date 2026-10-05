@@ -391,14 +391,14 @@
             </section>
           </div>
         </section>
-        @if (!isNativeApp && appRelease(); as release) {
+        @if (appRelease(); as release) {
           <section class="app-download-panel settings-app-download" aria-labelledby="app-download-heading">
             <div>
               <h3 id="app-download-heading">FileDrop Android alkalmazás</h3>
-              <p>Gyors feltöltés közvetlenül a telefon Megosztás menüjéből.</p>
+              <p>{{ isNativeApp ? 'Új alkalmazásverzió letöltése a telefonra.' : 'Gyors feltöltés közvetlenül a telefon Megosztás menüjéből.' }}</p>
               <small>{{ release.versionName }} · {{ formatSize(release.sizeBytes) }}</small>
             </div>
-            <button type="button" class="choose-button" (click)="downloadAppRelease()">APK letöltése</button>
+            <button type="button" class="choose-button" (click)="downloadAppRelease()">{{ isNativeApp ? 'Frissítés letöltése' : 'APK letöltése' }}</button>
           </section>
         }
         @if (accountStatus()?.account?.isAdmin) {

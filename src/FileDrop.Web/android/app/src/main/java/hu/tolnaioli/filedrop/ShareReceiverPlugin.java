@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Environment;
 import android.provider.OpenableColumns;
 import android.webkit.CookieManager;
+import android.webkit.MimeTypeMap;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -28,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -109,6 +111,7 @@ public class ShareReceiverPlugin extends Plugin {
             DownloadManager.Request request = new DownloadManager.Request(uri)
                 .setTitle(fileName)
                 .setDescription("Letöltés a FileDropból")
+                .setMimeType(mimeTypeForFileName(fileName))
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
 
@@ -419,6 +422,14 @@ public class ShareReceiverPlugin extends Plugin {
             .replace("\n", "_");
         if (result.isBlank()) return "filedrop-letoltes";
         return result.length() > 180 ? result.substring(0, 180) : result;
+    }
+
+    private static String mimeTypeForFileName(String fileName) {
+        String extension = MimeTypeMap.getFileExtensionFromUrl(fileName);
+        String mimeType = extension == null || extension.isBlank()
+            ? null
+            : MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase(Locale.ROOT));
+        return mimeType == null ? "application/octet-stream" : mimeType;
     }
 
     private static String readText(InputStream stream) throws Exception {
