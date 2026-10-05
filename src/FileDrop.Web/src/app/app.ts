@@ -240,7 +240,22 @@ export class App implements OnInit, OnDestroy {
   protected selectFile(event: Event, append = false): void {
     const input = event.target as HTMLInputElement;
     const selected = Array.from(input.files ?? []);
-    this.setSelectedFiles(append ? [...this.selectedFiles(), ...selected] : selected);
+    const candidates = append ? [...this.selectedFiles(), ...selected] : selected;
+    const uniqueFiles: File[] = [];
+    const seen = new Set<string>();
+    for (const file of candidates) {
+      const key = this.fileIdentity(file);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueFiles.push(file);
+    }
+    const duplicateCount = candidates.length - uniqueFiles.length;
+    this.setSelectedFiles(uniqueFiles);
+    if (duplicateCount > 0) {
+      this.notice.set(duplicateCount === 1
+        ? 'Az ismételt fájlt kihagytuk a kijelölésből.'
+        : `${duplicateCount} ismételt fájlt kihagytunk a kijelölésből.`);
+    }
     // Ugyanazt a fájlt egymás után is lehessen újraválasztani.
     input.value = '';
   }
@@ -651,6 +666,10 @@ export class App implements OnInit, OnDestroy {
     const copy = new File([file], file.name, { type: file.type, lastModified: file.lastModified });
     Object.defineProperty(copy, 'webkitRelativePath', { value: relativePath, enumerable: true });
     return copy;
+  }
+
+  private fileIdentity(file: File): string {
+    return `${file.webkitRelativePath || file.name}\u0000${file.size}\u0000${file.lastModified}`;
   }
 
   private loadStorage(silent = false): void {
