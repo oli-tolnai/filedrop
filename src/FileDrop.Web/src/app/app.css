@@ -124,20 +124,22 @@ button {
 .page-shell {
   width: min(1280px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 48px 0 28px;
+  padding: 34px 0 28px;
 }
 
 .intro-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 32px;
+  gap: 24px;
 }
 
 .eyebrow {
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   color: var(--blue);
-  font-size: 14px;
+  font-size: 12px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
   font-weight: 700;
 }
 
@@ -149,11 +151,11 @@ p {
 }
 
 h1 {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   color: var(--ink);
-  font-size: clamp(36px, 4vw, 50px);
-  font-weight: 740;
-  letter-spacing: -0.055em;
+  font-size: clamp(30px, 3.2vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
   line-height: 1.08;
 }
 
@@ -161,35 +163,35 @@ h1 {
   max-width: 660px;
   margin: 0;
   color: var(--muted);
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .network-note {
   display: flex;
-  max-width: 330px;
+  max-width: 285px;
   align-items: center;
-  gap: 13px;
-  padding: 15px 18px;
-  border: 1px solid #c9dce8;
-  border-radius: 12px;
-  background: #f1f8fb;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d7e3e9;
+  border-radius: 9px;
+  background: #f8fbfc;
 }
 
 .network-icon {
   display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   place-items: center;
-  border-radius: 11px;
-  color: var(--blue);
-  background: var(--pale-blue);
+  border-radius: 8px;
+  color: #527487;
+  background: #edf4f7;
 }
 
 .network-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 19px;
+  height: 19px;
 }
 
 .network-note > span:last-child {
@@ -199,12 +201,12 @@ h1 {
 
 .network-note strong {
   color: var(--ink);
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .network-note small {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -1493,6 +1495,78 @@ h1 {
   gap: 24px;
 }
 
+.account-settings {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.settings-heading h2 {
+  margin: 4px 0 5px;
+  color: var(--ink);
+  font-size: 24px;
+  letter-spacing: -.03em;
+}
+
+.settings-heading p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, .75fr) minmax(0, 1.25fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.account-settings .account-form {
+  display: grid;
+  gap: 11px;
+}
+
+.account-settings .account-form h3 {
+  margin: 0 0 2px;
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.own-session-list {
+  display: grid;
+  gap: 8px;
+}
+
+.own-session-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.own-session-list > div:last-child { border-bottom: 0; }
+
+.own-session-list > div > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.own-session-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.own-session-list em {
+  flex: 0 0 auto;
+  color: var(--blue);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .admin-page-heading {
   display: flex;
   align-items: end;
@@ -1525,17 +1599,22 @@ h1 {
 }
 
 .admin-user-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  display: block;
   padding: 15px 0;
   border-bottom: 1px solid var(--line);
 }
 
 .admin-user-row:last-child { border-bottom: 0; }
 
-.admin-user-row > div {
+.admin-user-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.admin-user-main > div {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -1546,10 +1625,89 @@ h1 {
   font-size: 12px;
 }
 
-.admin-user-row > strong {
+.admin-user-main > strong {
   flex: 0 0 auto;
   color: var(--blue);
   font-size: 13px;
+}
+
+.admin-user-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+
+.admin-user-actions .text-button,
+.admin-user-actions .danger-button {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.admin-inline-form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f4f9fb;
+}
+
+.admin-inline-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.admin-inline-form input {
+  min-width: 150px;
+  border: 1px solid #b7cbd4;
+  border-radius: 7px;
+  padding: 8px 9px;
+  font: inherit;
+}
+
+.admin-inline-form button:not(.text-button) {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--white);
+  background: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-session-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fbfc;
+}
+
+.admin-session-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-session-list .danger-button {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.admin-session-empty {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .file-row-expiry strong {
@@ -1694,6 +1852,10 @@ input:focus-visible {
   }
 
   .visibility-options {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -23,8 +23,8 @@
     <section class="intro-row">
       <div>
         <p class="eyebrow">Fájlátadás az otthoni hálózaton</p>
-        <h1>Fájlok küldése egyszerűen.</h1>
-        <p class="intro-text">Válassz ki egy fájlt, állítsd be, ki férjen hozzá, és meddig maradjon elérhető.</p>
+        <h1>Otthoni fájlmegosztás</h1>
+        <p class="intro-text">Fájlok küldése és fogadása a családdal, egy helyen.</p>
       </div>
       <div class="network-note">
         <span class="network-icon" aria-hidden="true">
@@ -63,7 +63,6 @@
       }
     </nav>
 
-    @if (activeView() === 'upload') {
     <section class="storage-summary" aria-labelledby="storage-heading">
       <div class="storage-title">
         <span class="storage-symbol" aria-hidden="true">
@@ -83,7 +82,6 @@
         <p class="storage-message">Tárhelyadatok betöltése…</p>
       }
     </section>
-    }
 
     @if (activeView() === 'upload') {
     <div class="task-page upload-page">
@@ -348,6 +346,31 @@
         </section>
         }
       </div>
+      @if (activeView() === 'mine' && accountStatus()?.account) {
+        <section class="account-settings" aria-labelledby="account-settings-heading">
+          <div class="settings-heading"><div><p class="eyebrow">Fiók és eszközök</p><h2 id="account-settings-heading">Saját beállítások</h2><p>A jelszó és a belépett eszközök kezelése.</p></div></div>
+          <div class="settings-grid">
+            <form class="code-panel account-form" (submit)="submitOwnPassword($event)">
+              <h3>Jelszócsere</h3>
+              <label>Jelenlegi jelszó<input name="currentPassword" type="password" inputmode="numeric" required minlength="4" pattern="[0-9]{4,}" autocomplete="current-password" /></label>
+              <label>Új jelszó<input name="newPassword" type="password" inputmode="numeric" required minlength="4" pattern="[0-9]{4,}" autocomplete="new-password" /></label>
+              <button type="submit" [disabled]="accountBusy()">Jelszó mentése</button>
+            </form>
+            <section class="code-panel session-panel" aria-labelledby="sessions-heading">
+              <div class="code-heading-row"><div><h3 id="sessions-heading">Saját eszközeim</h3><p>A már nem használt eszközöket kijelentkeztetheted.</p></div></div>
+              @if (ownSessionsState() === 'loading') { <p class="storage-message">Eszközlista betöltése…</p> }
+              @else if (ownSessionsState() === 'error') { <p class="storage-message error">Az eszközlista most nem olvasható.</p> }
+              @else {
+                <div class="own-session-list">
+                  @for (session of ownSessions(); track session.id) {
+                    <div><span><strong>{{ session.deviceName }}</strong><small>Belépve: {{ formatDate(session.createdAtUtc) }}</small></span>@if (session.isCurrent) { <em>Jelenlegi</em> } @else { <button type="button" class="text-button" (click)="revokeOwnSession(session)">Kijelentkeztetés</button> }</div>
+                  }
+                </div>
+              }
+            </section>
+          </div>
+        </section>
+      }
     } @else {
       <section class="admin-page" aria-labelledby="admin-heading">
         <div class="admin-page-heading">
@@ -370,7 +393,32 @@
             @else if (adminUsers().length) {
               <div class="admin-user-list">
                 @for (user of adminUsers(); track user.id) {
-                  <article class="admin-user-row"><div><strong>{{ user.displayName }}</strong><span>{{ user.isAdmin ? 'Tulajdonos' : 'Családtag' }} · létrehozva {{ formatDate(user.createdAtUtc) }}</span></div><strong>{{ user.activeSessionCount }} eszköz</strong></article>
+                  <article class="admin-user-row">
+                    <div class="admin-user-main"><div><strong>{{ user.displayName }}</strong><span>{{ user.isAdmin ? 'Tulajdonos' : 'Családtag' }} · létrehozva {{ formatDate(user.createdAtUtc) }}</span></div><strong>{{ user.activeSessionCount }} eszköz</strong></div>
+                    @if (!user.isAdmin) {
+                      <div class="admin-user-actions">
+                        <button type="button" class="text-button" (click)="toggleFamilySessions(user)">{{ adminSessionsUserId() === user.id ? 'Eszközlista bezárása' : 'Eszközök kezelése' }}</button>
+                        <button type="button" class="text-button" (click)="adminPasswordUserId.set(adminPasswordUserId() === user.id ? null : user.id)">Jelszócsere</button>
+                        <button type="button" class="danger-button" (click)="deleteFamilyAccount(user)">Fiók törlése</button>
+                      </div>
+                      @if (adminPasswordUserId() === user.id) {
+                        <form class="admin-inline-form" (submit)="submitFamilyPassword($event, user)">
+                          <label>Új jelszó<input name="password" type="password" inputmode="numeric" required minlength="4" maxlength="128" pattern="[0-9]{4,}" autocomplete="new-password" /></label>
+                          <button type="submit" [disabled]="accountBusy()">Mentés</button>
+                        </form>
+                      }
+                      @if (adminSessionsUserId() === user.id) {
+                        <div class="admin-session-list">
+                          @if (adminSessions().length) {
+                            @for (session of adminSessions(); track session.id) {
+                              <div><span>{{ session.deviceName }} · belépve {{ formatDate(session.createdAtUtc) }}</span><strong>{{ session.isCurrent ? 'Ez az eszköz' : 'Aktív' }}</strong></div>
+                            }
+                            <button type="button" class="danger-button" (click)="revokeFamilySessions(user)">Minden eszköz kijelentkeztetése</button>
+                          } @else { <span class="admin-session-empty">Nincs aktív eszköz.</span> }
+                        </div>
+                      }
+                    }
+                  </article>
                 }
               </div>
             } @else { <p class="storage-message">Még nincs családtag-fiók.</p> }

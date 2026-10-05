@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-public sealed record CurrentAccount(Guid Id, string DisplayName, bool IsAdmin, string DeviceName);
+public sealed record CurrentAccount(Guid Id, string DisplayName, bool IsAdmin, string DeviceName, Guid SessionId);
 
 public sealed class AccountSessionService(IPasswordHasher<AppUser> passwordHasher)
 {
@@ -26,7 +26,7 @@ public sealed class AccountSessionService(IPasswordHasher<AppUser> passwordHashe
         return await (from session in db.UserSessions.AsNoTracking()
                       join user in db.Users.AsNoTracking() on session.UserId equals user.Id
                       where session.TokenHash == tokenHash && session.ExpiresAtUtc > now
-                      select new CurrentAccount(user.Id, user.DisplayName, user.IsAdmin, session.DeviceName))
+                      select new CurrentAccount(user.Id, user.DisplayName, user.IsAdmin, session.DeviceName, session.Id))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -44,7 +44,7 @@ public sealed class AccountSessionService(IPasswordHasher<AppUser> passwordHashe
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var now = DateTime.UtcNow;
-        db.UserSessions.Add(new UserSession
+        var session = new UserSession
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
@@ -52,10 +52,11 @@ public sealed class AccountSessionService(IPasswordHasher<AppUser> passwordHashe
             DeviceName = deviceName,
             CreatedAtUtc = now,
             ExpiresAtUtc = now.Add(SessionLifetime),
-        });
+        };
+        db.UserSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
         context.Response.Cookies.Append(CookieName, token, CookieOptions(context, now.Add(SessionLifetime)));
-        return new CurrentAccount(user.Id, user.DisplayName, user.IsAdmin, deviceName);
+        return new CurrentAccount(user.Id, user.DisplayName, user.IsAdmin, deviceName, session.Id);
     }
 
     public async Task EndSessionAsync(
@@ -104,8 +105,15 @@ public static class AccountEndpoints
         endpoints.MapPost("/api/account/setup", SetupAsync).RequireRateLimiting("account");
         endpoints.MapPost("/api/account/login", LoginAsync).RequireRateLimiting("account");
         endpoints.MapPost("/api/account/logout", LogoutAsync);
+        endpoints.MapGet("/api/account/sessions", ListOwnSessionsAsync);
+        endpoints.MapDelete("/api/account/sessions/{id:guid}", RevokeOwnSessionAsync);
+        endpoints.MapPost("/api/account/password", ChangeOwnPasswordAsync).RequireRateLimiting("account");
         endpoints.MapGet("/api/admin/users", ListUsersAsync);
         endpoints.MapPost("/api/admin/users", CreateUserAsync).RequireRateLimiting("account");
+        endpoints.MapGet("/api/admin/users/{id:guid}/sessions", ListUserSessionsAsync);
+        endpoints.MapDelete("/api/admin/users/{id:guid}/sessions", RevokeUserSessionsAsync);
+        endpoints.MapPost("/api/admin/users/{id:guid}/password", ResetUserPasswordAsync).RequireRateLimiting("account");
+        endpoints.MapDelete("/api/admin/users/{id:guid}", DeleteUserAsync);
         return endpoints;
     }
 
@@ -194,6 +202,64 @@ public static class AccountEndpoints
         return Results.NoContent();
     }
 
+    private static async Task<IResult> ListOwnSessionsAsync(
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+
+        var items = await db.UserSessions
+            .AsNoTracking()
+            .Where(session => session.UserId == current.Id && session.ExpiresAtUtc > DateTime.UtcNow)
+            .OrderByDescending(session => session.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        return Results.Ok(items.Select(session => ToSessionDto(session, session.Id == current.SessionId)));
+    }
+
+    private static async Task<IResult> RevokeOwnSessionAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        if (id == current.SessionId) return Results.BadRequest(new ApiError("A jelenlegi eszköz munkamenetét itt nem lehet visszavonni."));
+
+        var session = await db.UserSessions.FirstOrDefaultAsync(item => item.Id == id && item.UserId == current.Id, cancellationToken);
+        if (session is null) return Results.NotFound();
+        db.UserSessions.Remove(session);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> ChangeOwnPasswordAsync(
+        ChangePasswordRequest request,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        var user = await db.Users.FirstOrDefaultAsync(item => item.Id == current.Id, cancellationToken);
+        if (user is null || sessions.VerifyPassword(user, request.CurrentPassword ?? "") == PasswordVerificationResult.Failed)
+            return Results.BadRequest(new ApiError("A jelenlegi jelszó hibás."));
+
+        var validation = ValidateCredentials(user.DisplayName, request.NewPassword, current.DeviceName);
+        if (validation is not null) return Results.BadRequest(new ApiError(validation));
+        user.PasswordHash = sessions.HashPassword(user, request.NewPassword!);
+        await db.UserSessions
+            .Where(session => session.UserId == current.Id && session.Id != current.SessionId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> CreateUserAsync(
         CreateUserRequest request,
         HttpContext context,
@@ -249,6 +315,94 @@ public static class AccountEndpoints
             sessionCounts.GetValueOrDefault(user.Id))));
     }
 
+    private static async Task<IResult> ListUserSessionsAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        if (!current.IsAdmin) return Results.Forbid();
+
+        var items = await db.UserSessions
+            .AsNoTracking()
+            .Where(session => session.UserId == id && session.ExpiresAtUtc > DateTime.UtcNow)
+            .OrderByDescending(session => session.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        return Results.Ok(items.Select(session => ToSessionDto(session, session.Id == current.SessionId)));
+    }
+
+    private static async Task<IResult> RevokeUserSessionsAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        if (!current.IsAdmin) return Results.Forbid();
+
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (user is null) return Results.NotFound();
+        if (user.IsAdmin) return Results.BadRequest(new ApiError("A tulajdonosi munkameneteket innen nem lehet visszavonni."));
+        await db.UserSessions.Where(session => session.UserId == id).ExecuteDeleteAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> ResetUserPasswordAsync(
+        Guid id,
+        ResetPasswordRequest request,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        if (!current.IsAdmin) return Results.Forbid();
+
+        var user = await db.Users.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (user is null) return Results.NotFound();
+        if (user.IsAdmin) return Results.BadRequest(new ApiError("A tulajdonosi jelszót innen nem lehet módosítani."));
+        var validation = ValidateCredentials(user.DisplayName, request.Password, "family-device");
+        if (validation is not null) return Results.BadRequest(new ApiError(validation));
+
+        user.PasswordHash = sessions.HashPassword(user, request.Password!);
+        await db.UserSessions.Where(session => session.UserId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DeleteUserAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var current = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (current is null) return Results.Unauthorized();
+        if (!current.IsAdmin) return Results.Forbid();
+
+        var user = await db.Users.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (user is null) return Results.NotFound();
+        if (user.IsAdmin) return Results.BadRequest(new ApiError("Tulajdonosi fiók nem törölhető."));
+
+        db.Users.Remove(user);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static SessionDto ToSessionDto(UserSession session, bool isCurrent) => new(
+        session.Id,
+        session.DeviceName,
+        session.CreatedAtUtc,
+        session.ExpiresAtUtc,
+        isCurrent);
+
     private static AppUser NewUser(string displayName, bool isAdmin) => new()
     {
         Id = Guid.NewGuid(),
@@ -276,3 +430,6 @@ public sealed record SetupAccountRequest(string? DisplayName, string? Password, 
 public sealed record LoginRequest(string? DisplayName, string? Password, string? DeviceName);
 public sealed record CreateUserRequest(string? DisplayName, string? Password);
 public sealed record AdminUserDto(Guid Id, string DisplayName, bool IsAdmin, DateTime CreatedAtUtc, int ActiveSessionCount);
+public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+public sealed record ResetPasswordRequest(string? Password);
+public sealed record SessionDto(Guid Id, string DeviceName, DateTime CreatedAtUtc, DateTime ExpiresAtUtc, bool IsCurrent);

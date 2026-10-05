@@ -36,6 +36,7 @@ interface Account {
   displayName: string;
   isAdmin: boolean;
   deviceName: string;
+  sessionId: string;
 }
 
 interface AccountStatus {
@@ -54,6 +55,14 @@ interface AdminUser {
   isAdmin: boolean;
   createdAtUtc: string;
   activeSessionCount: number;
+}
+
+interface SessionInfo {
+  id: string;
+  deviceName: string;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  isCurrent: boolean;
 }
 
 interface DroppedEntry {
@@ -112,6 +121,11 @@ export class App implements OnInit, OnDestroy {
   protected readonly showHistory = signal(false);
   protected readonly adminUsers = signal<AdminUser[]>([]);
   protected readonly adminState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  protected readonly adminSessions = signal<SessionInfo[]>([]);
+  protected readonly adminSessionsUserId = signal<string | null>(null);
+  protected readonly adminPasswordUserId = signal<string | null>(null);
+  protected readonly ownSessions = signal<SessionInfo[]>([]);
+  protected readonly ownSessionsState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   protected readonly accountBusy = signal(false);
 
   protected readonly expirationOptions = [
@@ -149,6 +163,7 @@ export class App implements OnInit, OnDestroy {
     this.activeView.set(view);
     this.notice.set('');
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnedShares();
+    if (view === 'mine' && this.accountStatus()?.account) this.loadOwnSessions();
     if (view === 'admin' && this.accountStatus()?.account?.isAdmin) this.loadAdminUsers();
   }
 
@@ -195,11 +210,98 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
+  protected toggleFamilySessions(user: AdminUser): void {
+    if (this.adminSessionsUserId() === user.id) {
+      this.adminSessionsUserId.set(null);
+      this.adminSessions.set([]);
+      return;
+    }
+    this.adminSessionsUserId.set(user.id);
+    this.adminSessions.set([]);
+    this.http.get<SessionInfo[]>(`/api/admin/users/${user.id}/sessions`).subscribe({
+      next: sessions => this.adminSessions.set(sessions),
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'Az eszközlista nem tölthető be.')),
+    });
+  }
+
+  protected revokeFamilySessions(user: AdminUser): void {
+    if (!confirm(`A(z) „${user.displayName}” minden eszközén kijelentkeztessük a fiókot?`)) return;
+    this.http.delete(`/api/admin/users/${user.id}/sessions`).subscribe({
+      next: () => {
+        this.notice.set('A családtag összes aktív eszközét kijelentkeztettük.');
+        this.adminSessions.set([]);
+        this.loadAdminUsers();
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'Az eszközök kijelentkeztetése nem sikerült.')),
+    });
+  }
+
+  protected submitFamilyPassword(event: SubmitEvent, user: AdminUser): void {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const values = new FormData(form);
+    this.accountBusy.set(true);
+    this.http.post(`/api/admin/users/${user.id}/password`, { password: values.get('password') }).subscribe({
+      next: () => {
+        this.notice.set(`A(z) „${user.displayName}” új jelszava beállítva; minden régi eszköze kijelentkezett.`);
+        this.adminPasswordUserId.set(null);
+        form.reset();
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A jelszó módosítása nem sikerült.')),
+      complete: () => this.accountBusy.set(false),
+    });
+  }
+
+  protected deleteFamilyAccount(user: AdminUser): void {
+    if (!confirm(`A(z) „${user.displayName}” fiókot töröljük? A hozzá tartozó fájlok megmaradnak, de a feltöltő neve leválik róluk.`)) return;
+    this.http.delete(`/api/admin/users/${user.id}`).subscribe({
+      next: () => {
+        this.notice.set('A családtag fiókját töröltük.');
+        this.adminSessionsUserId.set(null);
+        this.adminPasswordUserId.set(null);
+        this.loadAdminUsers();
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A fiók törlése nem sikerült.')),
+    });
+  }
+
+  protected submitOwnPassword(event: SubmitEvent): void {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const values = new FormData(form);
+    this.accountBusy.set(true);
+    this.http.post('/api/account/password', {
+      currentPassword: values.get('currentPassword'),
+      newPassword: values.get('newPassword'),
+    }).subscribe({
+      next: () => {
+        this.notice.set('A jelszavad megváltozott. A többi eszközödön újra be kell jelentkezni.');
+        form.reset();
+        this.loadOwnSessions();
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A jelszó módosítása nem sikerült.')),
+      complete: () => this.accountBusy.set(false),
+    });
+  }
+
+  protected revokeOwnSession(session: SessionInfo): void {
+    if (session.isCurrent) return;
+    this.http.delete(`/api/account/sessions/${session.id}`).subscribe({
+      next: () => {
+        this.notice.set(`A(z) „${session.deviceName}” eszközt kijelentkeztettük.`);
+        this.loadOwnSessions();
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'Az eszköz kijelentkeztetése nem sikerült.')),
+    });
+  }
+
   protected logout(): void {
     this.http.post('/api/account/logout', {}).subscribe({
       next: () => {
         this.accountStatus.update(value => value ? { ...value, account: null } : value);
         this.ownedShares.set([]);
+        this.ownSessions.set([]);
+        this.ownSessionsState.set('idle');
         this.sharedFiles.set([]);
         this.filesState.set('unauthorized');
         this.adminUsers.set([]);
@@ -722,6 +824,17 @@ export class App implements OnInit, OnDestroy {
     this.http.get<OwnedShare[]>('/api/me/shares').subscribe({
       next: (items) => this.ownedShares.set(items),
       error: () => { if (!silent) this.ownedShares.set([]); },
+    });
+  }
+
+  private loadOwnSessions(): void {
+    this.ownSessionsState.set('loading');
+    this.http.get<SessionInfo[]>('/api/account/sessions').subscribe({
+      next: sessions => {
+        this.ownSessions.set(sessions);
+        this.ownSessionsState.set('ready');
+      },
+      error: () => this.ownSessionsState.set('error'),
     });
   }
 
