@@ -237,9 +237,12 @@ export class App implements OnInit, OnDestroy {
     this.showHistory.update(value => !value);
   }
 
-  protected selectFile(event: Event): void {
+  protected selectFile(event: Event, append = false): void {
     const input = event.target as HTMLInputElement;
-    this.setSelectedFiles(Array.from(input.files ?? []));
+    const selected = Array.from(input.files ?? []);
+    this.setSelectedFiles(append ? [...this.selectedFiles(), ...selected] : selected);
+    // Ugyanazt a fájlt egymás után is lehessen újraválasztani.
+    input.value = '';
   }
 
   protected async dropFile(event: DragEvent): Promise<void> {
