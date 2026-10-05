@@ -197,7 +197,8 @@ p {
 }
 
 .app-update-notice strong,
-.app-download-panel h2 {
+.app-download-panel h2,
+.app-download-panel h3 {
   color: var(--ink);
   font-size: 16px;
 }
@@ -240,6 +241,10 @@ p {
 .app-download-panel small {
   display: block;
   margin-top: 7px;
+}
+
+.settings-app-download {
+  margin: 0;
 }
 
 .view-tabs {
@@ -1983,6 +1988,8 @@ input:focus-visible {
   .storage-summary {
     gap: 16px;
     padding: 15px;
+    justify-items: center;
+    text-align: center;
   }
 
   .app-update-notice,
@@ -2000,6 +2007,7 @@ input:focus-visible {
 
   .storage-title {
     min-width: 0;
+    justify-content: center;
   }
 
   .storage-values {
@@ -2009,9 +2017,10 @@ input:focus-visible {
   .storage-values > div,
   .storage-values > div:first-child {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 15px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
     padding: 9px 0;
     border-left: 0;
     border-top: 1px solid #c7dce5;
