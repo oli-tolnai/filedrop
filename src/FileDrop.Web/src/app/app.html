@@ -326,7 +326,7 @@
           <form class="code-form" (submit)="$event.preventDefault(); requestDownload()">
             <label class="visually-hidden" for="share-code">Hat karakteres megosztási kód</label>
             <input id="share-code" type="text" inputmode="text" autocomplete="one-time-code" maxlength="6" minlength="4" pattern="[A-Za-z0-9]{4,6}" placeholder="A7K2Q9" [value]="downloadCode()" (input)="updateCode($event)" />
-            <button type="submit" [disabled]="!canResolveCode()">Megnyitás</button>
+            <button type="submit" [disabled]="!canResolveCode()">Letöltés</button>
           </form>
         </section>
         }
