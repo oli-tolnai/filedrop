@@ -626,7 +626,7 @@ export class App implements OnInit, OnDestroy {
     this.http.post<Share>('/api/shares/resolve-code', { code: this.downloadCode() }).subscribe({
       next: (share) => {
         this.downloadCode.set('');
-        window.location.assign(share.downloadUrl);
+        this.startDownload(share);
       },
       error: (error: HttpErrorResponse) => {
         this.notice.set(this.readError(error, 'A megosztási kód nem használható.'));
@@ -639,7 +639,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   protected downloadShare(share: Share): void {
-    window.location.assign(share.downloadUrl);
+    this.startDownload(share);
   }
 
   protected downloadAppRelease(): void {
@@ -735,6 +735,24 @@ export class App implements OnInit, OnDestroy {
 
   protected getAbsoluteDownloadUrl(downloadUrl: string): string {
     return new URL(downloadUrl, window.location.origin).toString();
+  }
+
+  private startDownload(share: Share): void {
+    if (!this.isNativeApp) {
+      window.location.assign(share.downloadUrl);
+      return;
+    }
+
+    const url = this.getAbsoluteDownloadUrl(share.downloadUrl);
+    void ShareReceiver.downloadFile({ url, fileName: share.fileName })
+      .then(() => this.notice.set(`A(z) „${share.title || share.fileName}” letöltése elindult. Az Android értesítései között követheted.`))
+      .catch(() => {
+        // Régebbi APK-n még nincs natív letöltő: a külső böngésző legalább a
+        // nyilvános/kódos letöltéseket és az alkalmazásfrissítést el tudja indítani.
+        void ShareReceiver.openExternalUrl({ url })
+          .then(() => this.notice.set('A letöltést a külső böngészőben indítottuk el. Az alkalmazás frissítése után közvetlenül itt fog működni.'))
+          .catch(() => window.location.assign(url));
+      });
   }
 
   protected getShareLink(share: Share): string {

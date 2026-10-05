@@ -1,9 +1,12 @@
 package hu.tolnaioli.filedrop;
 
+import android.app.DownloadManager;
 import android.content.ClipData;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Environment;
 import android.provider.OpenableColumns;
 import android.webkit.CookieManager;
 import com.getcapacitor.JSArray;
@@ -76,6 +79,48 @@ public class ShareReceiverPlugin extends Plugin {
             call.resolve();
         } catch (Exception error) {
             call.reject("A külső böngésző megnyitása nem sikerült.", error);
+        }
+    }
+
+    @PluginMethod
+    public void downloadFile(PluginCall call) {
+        String value = call.getString("url");
+        String requestedFileName = call.getString("fileName");
+        if (value == null || value.isBlank() || requestedFileName == null || requestedFileName.isBlank()) {
+            call.reject("Hiányzik a letöltendő fájl címe vagy neve.");
+            return;
+        }
+
+        try {
+            Uri uri = Uri.parse(value);
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                call.reject("Csak HTTP vagy HTTPS címről lehet letölteni.");
+                return;
+            }
+
+            String fileName = safeDownloadFileName(requestedFileName);
+            DownloadManager downloadManager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+            if (downloadManager == null) {
+                call.reject("Az Android letöltéskezelője nem érhető el.");
+                return;
+            }
+
+            DownloadManager.Request request = new DownloadManager.Request(uri)
+                .setTitle(fileName)
+                .setDescription("Letöltés a FileDropból")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+
+            // A privát és közös fájlok letöltése a WebView-beli FileDrop-munkamenetet
+            // használja; a DownloadManager külön HTTP-kérése ezért megkapja a sütit.
+            String cookie = CookieManager.getInstance().getCookie(value);
+            if (cookie != null && !cookie.isBlank()) request.addRequestHeader("Cookie", cookie);
+
+            downloadManager.enqueue(request);
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("A natív letöltés nem indítható el.", error);
         }
     }
 
@@ -357,6 +402,23 @@ public class ShareReceiverPlugin extends Plugin {
 
     private static String encode(String value) {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    private static String safeDownloadFileName(String value) {
+        String result = value.trim()
+            .replace("\\", "_")
+            .replace("/", "_")
+            .replace(":", "_")
+            .replace("*", "_")
+            .replace("?", "_")
+            .replace("\"", "_")
+            .replace("<", "_")
+            .replace(">", "_")
+            .replace("|", "_")
+            .replace("\r", "_")
+            .replace("\n", "_");
+        if (result.isBlank()) return "filedrop-letoltes";
+        return result.length() > 180 ? result.substring(0, 180) : result;
     }
 
     private static String readText(InputStream stream) throws Exception {
