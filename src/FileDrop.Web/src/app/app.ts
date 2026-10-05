@@ -56,6 +56,22 @@ interface AdminUser {
   activeSessionCount: number;
 }
 
+interface DroppedEntry {
+  isFile: boolean;
+  isDirectory: boolean;
+  name: string;
+}
+
+interface DroppedFileEntry extends DroppedEntry {
+  file(success: (file: File) => void, error?: (error: DOMException) => void): void;
+}
+
+interface DroppedDirectoryEntry extends DroppedEntry {
+  createReader(): {
+    readEntries(success: (entries: DroppedEntry[]) => void, error?: (error: DOMException) => void): void;
+  };
+}
+
 @Component({
   selector: 'app-root',
   styleUrl: './app.css',
@@ -226,9 +242,30 @@ export class App implements OnInit, OnDestroy {
     this.setSelectedFiles(Array.from(input.files ?? []));
   }
 
-  protected dropFile(event: DragEvent): void {
+  protected async dropFile(event: DragEvent): Promise<void> {
     event.preventDefault();
-    this.setSelectedFiles(Array.from(event.dataTransfer?.files ?? []));
+    event.stopPropagation();
+
+    const items = Array.from(event.dataTransfer?.items ?? []);
+    const entries = items
+      .map(item => {
+        const getEntry = (item as unknown as { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry;
+        return typeof getEntry === 'function' ? getEntry.call(item) as DroppedEntry | null : null;
+      })
+      .filter((entry): entry is DroppedEntry => entry !== null);
+
+    if (!entries.length) {
+      this.setSelectedFiles(Array.from(event.dataTransfer?.files ?? []));
+      return;
+    }
+
+    try {
+      const files = (await Promise.all(entries.map(entry => this.readDroppedEntry(entry)))).flat();
+      this.setSelectedFiles(files);
+      if (!files.length) this.notice.set('A behúzott mappa nem tartalmazott olvasható fájlt.');
+    } catch {
+      this.notice.set('A behúzott mappa tartalma nem olvasható be. Próbáld újra, vagy használd a mappaválasztó gombot.');
+    }
   }
 
   protected keepFileHere(event: DragEvent): void {
@@ -580,6 +617,32 @@ export class App implements OnInit, OnDestroy {
     if (files.length && storage && this.selectedTotalBytes() > storage.uploadCapacityBytes) {
       this.notice.set('A kiválasztott fájlokhoz nincs elég hely a 100 GB-os biztonsági tartalék megtartásával.');
     }
+  }
+
+  private async readDroppedEntry(entry: DroppedEntry, parentPath = ''): Promise<File[]> {
+    const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+    if (entry.isFile) {
+      const fileEntry = entry as DroppedFileEntry;
+      const file = await new Promise<File>((resolve, reject) => fileEntry.file(resolve, reject));
+      return [this.withRelativePath(file, relativePath)];
+    }
+
+    if (!entry.isDirectory) return [];
+    const directoryEntry = entry as DroppedDirectoryEntry;
+    const reader = directoryEntry.createReader();
+    const children: DroppedEntry[] = [];
+    while (true) {
+      const batch = await new Promise<DroppedEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+      if (!batch.length) break;
+      children.push(...batch);
+    }
+    return (await Promise.all(children.map(child => this.readDroppedEntry(child, relativePath)))).flat();
+  }
+
+  private withRelativePath(file: File, relativePath: string): File {
+    const copy = new File([file], file.name, { type: file.type, lastModified: file.lastModified });
+    Object.defineProperty(copy, 'webkitRelativePath', { value: relativePath, enumerable: true });
+    return copy;
   }
 
   private loadStorage(silent = false): void {
