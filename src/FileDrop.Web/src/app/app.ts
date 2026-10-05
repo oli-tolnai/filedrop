@@ -4,7 +4,7 @@ import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import * as QRCode from 'qrcode';
 import { NativeSharedFile, ShareReceiver } from './share-receiver';
 
-type ViewName = 'download' | 'upload' | 'mine' | 'admin';
+type ViewName = 'download' | 'upload' | 'mine' | 'settings';
 type Visibility = 'shared' | 'code';
 type UploadMode = 'bundle' | 'separate';
 
@@ -164,7 +164,8 @@ export class App implements OnInit, OnDestroy {
     this.notice.set('');
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnedShares();
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnSessions();
-    if (view === 'admin' && this.accountStatus()?.account?.isAdmin) this.loadAdminUsers();
+    if (view === 'settings' && this.accountStatus()?.account?.isAdmin) this.loadAdminUsers();
+    if (view === 'settings' && this.accountStatus()?.account) this.loadOwnSessions();
   }
 
   protected submitSetup(event: SubmitEvent): void {

@@ -9,7 +9,7 @@
       </a>
       <div class="header-actions">
         @if (accountStatus()?.account; as account) {
-          <button type="button" class="account-pill" (click)="selectView('mine')"><strong>{{ account.displayName }}</strong><small>{{ account.deviceName }}</small></button>
+          <button type="button" class="account-pill" (click)="selectView('settings')"><strong>{{ account.displayName }}</strong><small>{{ account.deviceName }}</small></button>
         }
         <div class="server-pill" [class.is-online]="apiStatus() === 'online'" [class.is-offline]="apiStatus() === 'offline'" role="status" aria-label="FileDrop API állapota">
           <span class="status-dot" [class.online]="apiStatus() === 'online'" [class.offline]="apiStatus() === 'offline'" aria-hidden="true"></span>
@@ -20,20 +20,6 @@
   </header>
 
   <main id="main" class="page-shell">
-    <section class="intro-row">
-      <div>
-        <p class="eyebrow">Fájlátadás az otthoni hálózaton</p>
-        <h1>Otthoni fájlmegosztás</h1>
-        <p class="intro-text">Fájlok küldése és fogadása a családdal, egy helyen.</p>
-      </div>
-      <div class="network-note">
-        <span class="network-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M3.5 9.5a13 13 0 0 1 17 0M6.5 12.5a8.5 8.5 0 0 1 11 0M9.5 15.5a4 4 0 0 1 5 0M12 19h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </span>
-        <span><strong>Otthoni használatra</strong><small>A megosztás a helyi hálózatra készül.</small></span>
-      </div>
-    </section>
-
     @if (notice()) {
       <div class="notice" role="status">
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.25" stroke="currentColor" stroke-width="1.5"/><path d="M10 9v4M10 6.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -55,10 +41,10 @@
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 16a6 6 0 0 1 12 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         <span class="nav-label-wide">Saját megosztások</span><span class="nav-label-short">Saját</span>
       </button>
-      @if (accountStatus()?.account?.isAdmin) {
-        <button type="button" [class.selected]="activeView() === 'admin'" [attr.aria-current]="activeView() === 'admin' ? 'page' : null" (click)="selectView('admin')">
+      @if (accountStatus()?.account) {
+        <button type="button" [class.selected]="activeView() === 'settings'" [attr.aria-current]="activeView() === 'settings' ? 'page' : null" (click)="selectView('settings')">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3.5 16 6v4.25c0 3.35-2.25 5.55-6 6.75-3.75-1.2-6-3.4-6-6.75V6l6-2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m7.25 10 1.75 1.75 3.75-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span class="nav-label-wide">Adminisztráció</span><span class="nav-label-short">Admin</span>
+          <span class="nav-label-wide">Beállítások</span><span class="nav-label-short">Beáll.</span>
         </button>
       }
     </nav>
@@ -68,13 +54,12 @@
         <span class="storage-symbol" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7.5" ry="3" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" stroke="currentColor" stroke-width="1.6"/></svg>
         </span>
-        <div><h2 id="storage-heading">Tárhely</h2><p>A rendszer 100 GB helyet mindig szabadon hagy.</p></div>
+        <div><h2 id="storage-heading">Tárhely</h2></div>
       </div>
       @if (storageStatus(); as storage) {
         <dl class="storage-values">
-          <div><dt>FileDrop-fájlok</dt><dd>{{ formatSize(storage.fileDropUsedBytes) }}</dd></div>
+          <div><dt>Fájlok</dt><dd>{{ formatSize(storage.fileDropUsedBytes) }}</dd></div>
           <div class="storage-primary"><dt>Még feltölthető</dt><dd>{{ formatSize(storage.uploadCapacityBytes) }}</dd></div>
-          <div><dt>Biztonsági tartalék</dt><dd>{{ formatSize(storage.reservedFreeSpaceBytes) }}</dd></div>
         </dl>
       } @else if (storageState() === 'error') {
         <p class="storage-message error">A tárhelyadatok most nem olvashatók.</p>
@@ -346,9 +331,14 @@
         </section>
         }
       </div>
-      @if (activeView() === 'mine' && accountStatus()?.account) {
+    } @else {
+      <section class="settings-page" aria-labelledby="settings-page-heading">
+        <div class="settings-page-heading">
+          <div><h2 id="settings-page-heading">Beállítások</h2><p>Fiók és eszközök kezelése.</p></div>
+          <button type="button" class="text-button" (click)="selectView('download')">Vissza a letöltéshez</button>
+        </div>
         <section class="account-settings" aria-labelledby="account-settings-heading">
-          <div class="settings-heading"><div><p class="eyebrow">Fiók és eszközök</p><h2 id="account-settings-heading">Saját beállítások</h2><p>A jelszó és a belépett eszközök kezelése.</p></div></div>
+          <div class="settings-heading"><div><h3 id="account-settings-heading">Saját fiók és eszközök</h3><p>A jelszó és a belépett eszközök kezelése.</p></div></div>
           <div class="settings-grid">
             <form class="code-panel account-form" (submit)="submitOwnPassword($event)">
               <h3>Jelszócsere</h3>
@@ -370,60 +360,58 @@
             </section>
           </div>
         </section>
-      }
-    } @else {
-      <section class="admin-page" aria-labelledby="admin-heading">
-        <div class="admin-page-heading">
-          <div><p class="eyebrow">Csak tulajdonosnak</p><h2 id="admin-heading">Adminisztráció</h2><p>Családtag-fiókok létrehozása és áttekintése.</p></div>
-          <button type="button" class="text-button" (click)="selectView('download')">Vissza a letöltéshez</button>
-        </div>
-        <div class="admin-grid">
-          <section class="code-panel" aria-labelledby="family-heading">
-            <div class="code-heading-row"><div><h3 id="family-heading">Családtag hozzáadása</h3><p>A kapott fiókkal több eszközön is be lehet jelentkezni.</p></div></div>
-            <form class="account-form" (submit)="createFamilyAccount($event)">
-              <label>Név<input name="displayName" required minlength="2" maxlength="60" /></label>
-              <label>Kezdeti jelszó<input name="password" type="password" inputmode="numeric" required minlength="4" maxlength="128" pattern="[0-9]{4,}" autocomplete="new-password" /></label>
-              <button type="submit" [disabled]="accountBusy()">Fiók létrehozása</button>
-            </form>
-          </section>
-          <section class="code-panel" aria-labelledby="users-heading">
-            <div class="code-heading-row"><div><h3 id="users-heading">Családtag-fiókok</h3><p>A jelszavakat itt nem jelenítjük meg.</p></div></div>
-            @if (adminState() === 'loading') { <p class="storage-message">Lista betöltése…</p> }
-            @else if (adminState() === 'error') { <p class="storage-message error">A lista most nem olvasható.</p> }
-            @else if (adminUsers().length) {
-              <div class="admin-user-list">
-                @for (user of adminUsers(); track user.id) {
-                  <article class="admin-user-row">
-                    <div class="admin-user-main"><div><strong>{{ user.displayName }}</strong><span>{{ user.isAdmin ? 'Tulajdonos' : 'Családtag' }} · létrehozva {{ formatDate(user.createdAtUtc) }}</span></div><strong>{{ user.activeSessionCount }} eszköz</strong></div>
-                    @if (!user.isAdmin) {
-                      <div class="admin-user-actions">
-                        <button type="button" class="text-button" (click)="toggleFamilySessions(user)">{{ adminSessionsUserId() === user.id ? 'Eszközlista bezárása' : 'Eszközök kezelése' }}</button>
-                        <button type="button" class="text-button" (click)="adminPasswordUserId.set(adminPasswordUserId() === user.id ? null : user.id)">Jelszócsere</button>
-                        <button type="button" class="danger-button" (click)="deleteFamilyAccount(user)">Fiók törlése</button>
-                      </div>
-                      @if (adminPasswordUserId() === user.id) {
-                        <form class="admin-inline-form" (submit)="submitFamilyPassword($event, user)">
-                          <label>Új jelszó<input name="password" type="password" inputmode="numeric" required minlength="4" maxlength="128" pattern="[0-9]{4,}" autocomplete="new-password" /></label>
-                          <button type="submit" [disabled]="accountBusy()">Mentés</button>
-                        </form>
-                      }
-                      @if (adminSessionsUserId() === user.id) {
-                        <div class="admin-session-list">
-                          @if (adminSessions().length) {
-                            @for (session of adminSessions(); track session.id) {
-                              <div><span>{{ session.deviceName }} · belépve {{ formatDate(session.createdAtUtc) }}</span><strong>{{ session.isCurrent ? 'Ez az eszköz' : 'Aktív' }}</strong></div>
-                            }
-                            <button type="button" class="danger-button" (click)="revokeFamilySessions(user)">Minden eszköz kijelentkeztetése</button>
-                          } @else { <span class="admin-session-empty">Nincs aktív eszköz.</span> }
-                        </div>
-                      }
+        @if (accountStatus()?.account?.isAdmin) {
+          <section class="family-settings" aria-labelledby="family-settings-heading">
+            <div class="settings-heading"><div><h3 id="family-settings-heading">Családtagok</h3><p>Családtag-fiókok létrehozása és kezelése.</p></div></div>
+            <div class="admin-grid">
+              <section class="code-panel" aria-labelledby="family-heading">
+                <div class="code-heading-row"><div><h3 id="family-heading">Családtag hozzáadása</h3><p>A kapott fiókkal több eszközön is be lehet jelentkezni.</p></div></div>
+                <form class="account-form" (submit)="createFamilyAccount($event)">
+                  <label>Név<input name="displayName" required minlength="2" maxlength="60" /></label>
+                  <label>Kezdeti jelszó<input name="password" type="password" inputmode="numeric" required minlength="4" maxlength="128" pattern="[0-9]{4,}" autocomplete="new-password" /></label>
+                  <button type="submit" [disabled]="accountBusy()">Fiók létrehozása</button>
+                </form>
+              </section>
+              <section class="code-panel" aria-labelledby="users-heading">
+                <div class="code-heading-row"><div><h3 id="users-heading">Családtag-fiókok</h3><p>A jelszavakat itt nem jelenítjük meg.</p></div></div>
+                @if (adminState() === 'loading') { <p class="storage-message">Lista betöltése…</p> }
+                @else if (adminState() === 'error') { <p class="storage-message error">A lista most nem olvasható.</p> }
+                @else if (adminUsers().length) {
+                  <div class="admin-user-list">
+                    @for (user of adminUsers(); track user.id) {
+                      <article class="admin-user-row">
+                        <div class="admin-user-main"><div><strong>{{ user.displayName }}</strong><span>{{ user.isAdmin ? 'Tulajdonos' : 'Családtag' }} · létrehozva {{ formatDate(user.createdAtUtc) }}</span></div><strong>{{ user.activeSessionCount }} eszköz</strong></div>
+                        @if (!user.isAdmin) {
+                          <div class="admin-user-actions">
+                            <button type="button" class="text-button" (click)="toggleFamilySessions(user)">{{ adminSessionsUserId() === user.id ? 'Eszközlista bezárása' : 'Eszközök kezelése' }}</button>
+                            <button type="button" class="text-button" (click)="adminPasswordUserId.set(adminPasswordUserId() === user.id ? null : user.id)">Jelszócsere</button>
+                            <button type="button" class="danger-button" (click)="deleteFamilyAccount(user)">Fiók törlése</button>
+                          </div>
+                          @if (adminPasswordUserId() === user.id) {
+                            <form class="admin-inline-form" (submit)="submitFamilyPassword($event, user)">
+                              <label>Új jelszó<input name="password" type="password" inputmode="numeric" required minlength="4" maxlength="128" pattern="[0-9]{4,}" autocomplete="new-password" /></label>
+                              <button type="submit" [disabled]="accountBusy()">Mentés</button>
+                            </form>
+                          }
+                          @if (adminSessionsUserId() === user.id) {
+                            <div class="admin-session-list">
+                              @if (adminSessions().length) {
+                                @for (session of adminSessions(); track session.id) {
+                                  <div><span>{{ session.deviceName }} · belépve {{ formatDate(session.createdAtUtc) }}</span><strong>{{ session.isCurrent ? 'Ez az eszköz' : 'Aktív' }}</strong></div>
+                                }
+                                <button type="button" class="danger-button" (click)="revokeFamilySessions(user)">Minden eszköz kijelentkeztetése</button>
+                              } @else { <span class="admin-session-empty">Nincs aktív eszköz.</span> }
+                            </div>
+                          }
+                        }
+                      </article>
                     }
-                  </article>
-                }
-              </div>
-            } @else { <p class="storage-message">Még nincs családtag-fiók.</p> }
+                  </div>
+                } @else { <p class="storage-message">Még nincs családtag-fiók.</p> }
+              </section>
+            </div>
           </section>
-        </div>
+        }
       </section>
     }
 

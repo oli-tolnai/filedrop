@@ -127,13 +127,6 @@ button {
   padding: 34px 0 28px;
 }
 
-.intro-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
 .eyebrow {
   margin: 0 0 8px;
   color: var(--blue);
@@ -148,66 +141,6 @@ h2,
 h3,
 p {
   margin-top: 0;
-}
-
-h1 {
-  margin-bottom: 8px;
-  color: var(--ink);
-  font-size: clamp(30px, 3.2vw, 40px);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.08;
-}
-
-.intro-text {
-  max-width: 660px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.network-note {
-  display: flex;
-  max-width: 285px;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid #d7e3e9;
-  border-radius: 9px;
-  background: #f8fbfc;
-}
-
-.network-icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  place-items: center;
-  border-radius: 8px;
-  color: #527487;
-  background: #edf4f7;
-}
-
-.network-icon svg {
-  width: 19px;
-  height: 19px;
-}
-
-.network-note > span:last-child {
-  display: grid;
-  gap: 4px;
-}
-
-.network-note strong {
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.network-note small {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .notice {
@@ -250,7 +183,7 @@ h1 {
   overflow-x: auto;
   scrollbar-width: none;
   gap: 8px;
-  margin: 36px 0 22px;
+  margin: 14px 0 18px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -319,7 +252,7 @@ h1 {
 
 .storage-title {
   display: flex;
-  min-width: 255px;
+  min-width: 160px;
   align-items: center;
   gap: 13px;
 }
@@ -347,17 +280,10 @@ h1 {
   font-weight: 720;
 }
 
-.storage-title p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
 .storage-values {
   display: grid;
-  min-width: 520px;
-  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  min-width: 360px;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
   margin: 0;
 }
 
@@ -1490,7 +1416,7 @@ h1 {
 
 .history-toggle svg { width: 16px; height: 16px; }
 
-.admin-page {
+.settings-page {
   display: grid;
   gap: 24px;
 }
@@ -1498,13 +1424,19 @@ h1 {
 .account-settings {
   display: grid;
   gap: 16px;
-  margin-top: 24px;
 }
 
-.settings-heading h2 {
-  margin: 4px 0 5px;
+.family-settings {
+  display: grid;
+  gap: 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-heading h3 {
+  margin: 0 0 5px;
   color: var(--ink);
-  font-size: 24px;
+  font-size: 20px;
   letter-spacing: -.03em;
 }
 
@@ -1567,7 +1499,7 @@ h1 {
   font-weight: 700;
 }
 
-.admin-page-heading {
+.settings-page-heading {
   display: flex;
   align-items: end;
   justify-content: space-between;
@@ -1575,14 +1507,14 @@ h1 {
   padding: 4px 0 2px;
 }
 
-.admin-page-heading h2 {
-  margin: 4px 0 7px;
+.settings-page-heading h2 {
+  margin: 0 0 7px;
   color: var(--ink);
   font-size: clamp(24px, 4vw, 34px);
   letter-spacing: -.04em;
 }
 
-.admin-page-heading p:not(.eyebrow) {
+.settings-page-heading p {
   margin: 0;
   color: var(--muted);
 }
@@ -1861,14 +1793,6 @@ input:focus-visible {
 }
 
 @media (max-width: 780px) {
-  .intro-row {
-    align-items: flex-start;
-  }
-
-  .network-note {
-    max-width: 270px;
-  }
-
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -1938,45 +1862,6 @@ input:focus-visible {
     padding-bottom: calc(94px + env(safe-area-inset-bottom));
   }
 
-  .intro-row {
-    display: block;
-  }
-
-  .eyebrow {
-    margin-bottom: 9px;
-    font-size: 13px;
-  }
-
-  h1 {
-    max-width: 460px;
-    margin-bottom: 10px;
-    font-size: clamp(34px, 9vw, 43px);
-  }
-
-  .intro-text {
-    font-size: 16px;
-  }
-
-  .network-note {
-    max-width: none;
-    margin-top: 17px;
-    padding: 11px 13px;
-  }
-
-  .network-icon {
-    width: 38px;
-    height: 38px;
-    flex-basis: 38px;
-  }
-
-  .network-note strong {
-    font-size: 14px;
-  }
-
-  .network-note small {
-    font-size: 13px;
-  }
-
   .view-tabs {
     position: fixed;
     z-index: 40;
@@ -2024,11 +1909,11 @@ input:focus-visible {
 
   .storage-summary,
   .task-page,
-  .admin-page {
+  .settings-page {
     margin-top: 24px;
   }
 
-  .admin-page-heading { align-items: flex-start; flex-direction: column; }
+  .settings-page-heading { align-items: flex-start; flex-direction: column; }
   .own-share-list { max-height: 360px; }
 
   .storage-summary {
