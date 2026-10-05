@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpEventType, HttpHeaders, HttpParams, 
 import { Component, inject, OnInit, signal } from '@angular/core';
 import * as QRCode from 'qrcode';
 
-type ViewName = 'files' | 'mine' | 'admin';
+type ViewName = 'download' | 'upload' | 'mine' | 'admin';
 type Visibility = 'shared' | 'code';
 
 interface StorageStatus {
@@ -61,7 +61,7 @@ interface AdminUser {
 export class App implements OnInit {
   private readonly http = inject(HttpClient);
 
-  protected readonly activeView = signal<ViewName>('files');
+  protected readonly activeView = signal<ViewName>('download');
   protected readonly apiStatus = signal<'checking' | 'online' | 'offline'>('checking');
   protected readonly storageState = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly storageStatus = signal<StorageStatus | null>(null);
@@ -163,7 +163,7 @@ export class App implements OnInit {
         this.sharedFiles.set([]);
         this.filesState.set('unauthorized');
         this.adminUsers.set([]);
-        this.activeView.set('files');
+        this.activeView.set('download');
         this.notice.set('Kijelentkeztél.');
       },
       error: () => this.notice.set('A kijelentkezés nem sikerült.'),
@@ -345,10 +345,13 @@ export class App implements OnInit {
   }
 
   protected restoreShareTools(share: Share): void {
+    this.activeView.set('upload');
     this.createdShare.set(share);
     this.notice.set('A megosztás linkje és QR-kódja újra megnyitható.');
     void this.createQrCode(this.getShareLink(share));
-    document.querySelector('.upload-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => {
+      document.querySelector('.share-result')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
 
   protected canSelectedFileFit(): boolean {
@@ -494,6 +497,7 @@ export class App implements OnInit {
       if (!entry) return;
       const file = new File([entry.blob], entry.name, { type: entry.type, lastModified: entry.lastModified });
       this.setSelectedFile(file);
+      this.activeView.set('upload');
       this.notice.set('A megosztásmenüből érkező fájl készen áll a feltöltésre.');
       await this.deletePendingShareFile();
     } catch {

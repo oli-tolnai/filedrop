@@ -42,14 +42,18 @@
       </div>
     }
 
-    <nav class="view-tabs" aria-label="Fájl nézet">
-      <button type="button" [class.selected]="activeView() === 'files'" [attr.aria-current]="activeView() === 'files' ? 'page' : null" (click)="selectView('files')">
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.5 5.25A1.75 1.75 0 0 1 5.25 3.5h3l1.5 1.75h5.5A1.75 1.75 0 0 1 17 7v7.75a1.75 1.75 0 0 1-1.75 1.75h-10a1.75 1.75 0 0 1-1.75-1.75V5.25Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        Közös fájlok <span class="tab-count">{{ sharedFiles().length }}</span>
+    <nav class="view-tabs" aria-label="FileDrop oldalak">
+      <button type="button" [class.selected]="activeView() === 'download'" [attr.aria-current]="activeView() === 'download' ? 'page' : null" (click)="selectView('download')">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3.5v9m0 0 3.5-3.5M10 12.5 6.5 9M4 14v1.25c0 .97.78 1.75 1.75 1.75h8.5c.97 0 1.75-.78 1.75-1.75V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Letöltés
+      </button>
+      <button type="button" [class.selected]="activeView() === 'upload'" [attr.aria-current]="activeView() === 'upload' ? 'page' : null" (click)="selectView('upload')">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 12.5v-9m0 0L6.5 7M10 3.5 13.5 7M4 14v1.25c0 .97.78 1.75 1.75 1.75h8.5c.97 0 1.75-.78 1.75-1.75V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Feltöltés
       </button>
       <button type="button" [class.selected]="activeView() === 'mine'" [attr.aria-current]="activeView() === 'mine' ? 'page' : null" (click)="selectView('mine')">
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 16a6 6 0 0 1 12 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Saját megosztásaim
+        Saját megosztások
       </button>
       @if (accountStatus()?.account?.isAdmin) {
         <button type="button" [class.selected]="activeView() === 'admin'" [attr.aria-current]="activeView() === 'admin' ? 'page' : null" (click)="selectView('admin')">
@@ -59,6 +63,7 @@
       }
     </nav>
 
+    @if (activeView() === 'upload') {
     <section class="storage-summary" aria-labelledby="storage-heading">
       <div class="storage-title">
         <span class="storage-symbol" aria-hidden="true">
@@ -78,9 +83,11 @@
         <p class="storage-message">Tárhelyadatok betöltése…</p>
       }
     </section>
+    }
 
-    @if (activeView() !== 'admin') {
-    <div class="workspace-grid">
+    @if (activeView() === 'upload') {
+    <div class="task-page upload-page">
+      @if (accountStatus()?.account) {
       <section class="upload-panel" aria-labelledby="upload-heading">
         <div class="section-heading">
           <span class="section-icon upload-icon" aria-hidden="true">
@@ -168,12 +175,23 @@
           </section>
         }
       </section>
-
-      <div class="library-column">
+      } @else {
+        <section class="files-panel upload-access-panel" aria-labelledby="upload-login-heading">
+          <div class="empty-state access-state">
+            <span class="empty-icon" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><rect x="10" y="17" width="20" height="15" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M14 17v-4a6 6 0 0 1 12 0v4M20 23v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+            <h2 id="upload-login-heading">A feltöltéshez jelentkezz be</h2>
+            <p>Névtelen látogató nem tud fájlt feltölteni. Ez védi a szervert a teleszemeteléstől.</p>
+            <button type="button" class="choose-button" (click)="selectView('mine')">Bejelentkezés</button>
+          </div>
+        </section>
+      }
+    </div>
+    } @else if (activeView() === 'download' || activeView() === 'mine') {
+      <div class="task-page library-column" [class.download-page]="activeView() === 'download'">
         <section class="files-panel" aria-labelledby="files-heading">
           <div class="panel-heading">
-            <div><div class="heading-title-row"><h2 id="files-heading">{{ activeView() === 'files' ? 'Közös fájlok' : 'Saját megosztásaim' }}</h2><span class="file-count">{{ activeView() === 'files' ? sharedFiles().length : visibleOwnedShares().length }}</span></div>
-              <p>{{ activeView() === 'files' ? 'A hálózaton megosztott fájlok.' : 'Az általad feltöltött fájlok.' }}</p>
+            <div><div class="heading-title-row"><h2 id="files-heading">{{ activeView() === 'download' ? 'Közös fájlok' : 'Saját megosztásaim' }}</h2><span class="file-count">{{ activeView() === 'download' ? sharedFiles().length : visibleOwnedShares().length }}</span></div>
+              <p>{{ activeView() === 'download' ? 'A család által megosztott fájlok.' : 'Az általad feltöltött fájlok.' }}</p>
             </div>
             @if (activeView() === 'mine' && accountStatus()?.account) {
               <button type="button" class="history-toggle" [class.selected]="showHistory()" (click)="toggleHistory()" title="Lejárt és törölt megosztások megjelenítése" aria-label="Előzmények megjelenítése">
@@ -182,17 +200,17 @@
               </button>
               <button type="button" class="text-button header-link" (click)="logout()">Kijelentkezés</button>
             } @else {
-              <span class="list-status">{{ activeView() === 'files' && sharedFiles().length ? 'Aktív' : 'Üres' }}</span>
+              <span class="list-status">{{ activeView() === 'download' && sharedFiles().length ? 'Aktív' : 'Üres' }}</span>
             }
           </div>
-          @if (activeView() === 'files' && filesState() === 'unauthorized') {
+          @if (activeView() === 'download' && filesState() === 'unauthorized') {
             <div class="empty-state access-state">
               <span class="empty-icon" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><rect x="10" y="17" width="20" height="15" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M14 17v-4a6 6 0 0 1 12 0v4M20 23v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
               <h3>Jelentkezz be a közös fájlokhoz</h3>
               <p>A közös lista csak bejelentkezett felhasználóknak látható. Kódos letöltéshez nincs szükség fiókra.</p>
               <button type="button" class="choose-button" (click)="selectView('mine')">Bejelentkezés</button>
             </div>
-          } @else if (activeView() === 'files' && sharedFiles().length) {
+          } @else if (activeView() === 'download' && sharedFiles().length) {
             <div class="file-list">
               @for (share of sharedFiles(); track share.id) {
                 <article class="file-row">
@@ -256,14 +274,15 @@
           } @else {
             <div class="empty-state">
               <span class="empty-icon" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M11 7.5h11l7 7v17a1.5 1.5 0 0 1-1.5 1.5h-16a1.5 1.5 0 0 1-1.5-1.5V9a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M22 8v7h7M15 22h10M15 27h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-              <h3>{{ activeView() === 'files' ? 'Még nincs megosztott fájl' : 'Még nincs saját megosztásod' }}</h3>
-              <p>{{ activeView() === 'files' ? 'Az itt feltöltött, közösnek jelölt fájlok jelennek majd meg.' : 'A bejelentkezés után feltöltött fájlok előzményei itt jelennek meg.' }}</p>
+              <h3>{{ activeView() === 'download' ? 'Még nincs megosztott fájl' : 'Még nincs saját megosztásod' }}</h3>
+              <p>{{ activeView() === 'download' ? 'Az itt feltöltött, közösnek jelölt fájlok jelennek majd meg.' : 'A bejelentkezés után feltöltött fájlok előzményei itt jelennek meg.' }}</p>
             </div>
           }
           <div class="list-footer"><span class="status-dot" aria-hidden="true"></span>Helyi hálózati fájlmegosztás</div>
         </section>
 
-        <section class="code-panel" aria-labelledby="code-heading">
+        @if (activeView() === 'download') {
+        <section class="code-panel download-code-panel" aria-labelledby="code-heading">
           <div class="code-heading-row">
             <span class="section-icon code-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M7.25 6.25H5.5a2.75 2.75 0 0 0 0 5.5h2m5.25-5.5h1.75a2.75 2.75 0 1 1 0 5.5h-2M7 9h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
             <div><h2 id="code-heading">Van letöltési kódod?</h2><p>Írd be a hat karakteres kódot.</p></div>
@@ -274,13 +293,13 @@
             <button type="submit" [disabled]="!canResolveCode()">Megnyitás</button>
           </form>
         </section>
+        }
       </div>
-    </div>
     } @else {
       <section class="admin-page" aria-labelledby="admin-heading">
         <div class="admin-page-heading">
           <div><p class="eyebrow">Csak tulajdonosnak</p><h2 id="admin-heading">Adminisztráció</h2><p>Családtag-fiókok létrehozása és áttekintése.</p></div>
-          <button type="button" class="text-button" (click)="selectView('files')">Vissza a fájlokhoz</button>
+          <button type="button" class="text-button" (click)="selectView('download')">Vissza a letöltéshez</button>
         </div>
         <div class="admin-grid">
           <section class="code-panel" aria-labelledby="family-heading">

@@ -246,9 +246,15 @@ h1 {
 .view-tabs {
   display: flex;
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   gap: 8px;
   margin: 36px 0 22px;
   border-bottom: 1px solid var(--line);
+}
+
+.view-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .view-tabs button {
@@ -388,6 +394,23 @@ h1 {
   grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
   align-items: start;
   gap: 24px;
+}
+
+.task-page {
+  width: min(100%, 980px);
+  margin-inline: auto;
+}
+
+.upload-page {
+  width: min(100%, 760px);
+}
+
+.download-page .download-code-panel {
+  order: -1;
+}
+
+.upload-access-panel {
+  min-height: 360px;
 }
 
 .upload-panel,
