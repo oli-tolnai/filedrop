@@ -124,7 +124,7 @@ button {
 .page-shell {
   width: min(1280px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 34px 0 28px;
+  padding: 5px 0 28px;
 }
 
 .eyebrow {
@@ -1858,7 +1858,7 @@ input:focus-visible {
   .account-pill { display: none; }
 
   .page-shell {
-    padding-top: 32px;
+    padding-top: 5px;
     padding-bottom: calc(94px + env(safe-area-inset-bottom));
   }
 
