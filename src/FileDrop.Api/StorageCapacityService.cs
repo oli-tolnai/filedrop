@@ -4,6 +4,7 @@ public sealed class FileDropOptions
 {
     public string StoragePath { get; init; } = "data/files";
     public string TemporaryPath { get; init; } = "data/incoming";
+    public string ReleaseDirectoryPath { get; init; } = "data/releases";
     public string DatabasePath { get; init; } = "data/filedrop.db";
     public long ReservedFreeSpaceBytes { get; init; } = 100L * 1024 * 1024 * 1024;
     public string SetupToken { get; init; } = "";
@@ -28,6 +29,10 @@ public sealed class StorageCapacityService(
 
     public string TemporaryPath { get; } = Path.GetFullPath(
         options.Value.TemporaryPath,
+        environment.ContentRootPath);
+
+    public string ReleaseDirectoryPath { get; } = Path.GetFullPath(
+        options.Value.ReleaseDirectoryPath,
         environment.ContentRootPath);
 
     public StorageStatus GetStatus()

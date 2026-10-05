@@ -1,5 +1,6 @@
 import { HttpClient, HttpErrorResponse, HttpEventType, HttpHeaders, HttpParams, HttpRequest } from '@angular/common/http';
 import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import * as QRCode from 'qrcode';
 import { NativeSharedFile, ShareReceiver } from './share-receiver';
@@ -13,6 +14,13 @@ interface StorageStatus {
   diskAvailableBytes: number;
   uploadCapacityBytes: number;
   reservedFreeSpaceBytes: number;
+}
+
+interface AppRelease {
+  versionCode: number;
+  versionName: string;
+  sizeBytes: number;
+  downloadUrl: string;
 }
 
 interface Share {
@@ -96,6 +104,7 @@ export class App implements OnInit, OnDestroy {
 
   protected readonly activeView = signal<ViewName>('download');
   protected readonly apiStatus = signal<'checking' | 'online' | 'offline'>('checking');
+  protected readonly isNativeApp = Capacitor.isNativePlatform();
   protected readonly storageState = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly storageStatus = signal<StorageStatus | null>(null);
   protected readonly sharedFiles = signal<Share[]>([]);
@@ -114,6 +123,9 @@ export class App implements OnInit, OnDestroy {
   protected readonly createdShare = signal<Share | null>(null);
   protected readonly createdShares = signal<Share[]>([]);
   protected readonly qrCodeDataUrl = signal('');
+  protected readonly appRelease = signal<AppRelease | null>(null);
+  protected readonly installedAppVersion = signal<string | null>(null);
+  protected readonly appUpdateAvailable = signal(false);
   protected readonly shareToolsShare = signal<Share | null>(null);
   protected readonly shareToolsQrCode = signal('');
   protected readonly accountStatus = signal<AccountStatus | null>(null);
@@ -143,6 +155,7 @@ export class App implements OnInit, OnDestroy {
       error: () => this.apiStatus.set('offline'),
     });
     this.loadStorage();
+    this.loadAppRelease();
     this.loadAccount();
     this.loadPendingCode();
     void this.loadPendingShareFile();
@@ -629,6 +642,18 @@ export class App implements OnInit, OnDestroy {
     window.location.assign(share.downloadUrl);
   }
 
+  protected downloadAppRelease(): void {
+    const release = this.appRelease();
+    if (!release) return;
+
+    const url = this.getAbsoluteDownloadUrl(release.downloadUrl);
+    if (this.isNativeApp) {
+      void ShareReceiver.openExternalUrl({ url }).catch(() => window.location.assign(url));
+      return;
+    }
+    window.location.assign(url);
+  }
+
   protected async copyShareLink(share: Share): Promise<void> {
     const link = this.getShareLink(share);
     try {
@@ -784,6 +809,32 @@ export class App implements OnInit, OnDestroy {
       },
       error: () => { if (!silent) this.storageState.set('error'); },
     });
+  }
+
+  private loadAppRelease(): void {
+    this.http.get<AppRelease | null>('/api/app-release').subscribe({
+      next: release => {
+        if (!release) {
+          this.appRelease.set(null);
+          return;
+        }
+        this.appRelease.set(release);
+        void this.checkForNativeUpdate(release);
+      },
+      error: () => this.appRelease.set(null),
+    });
+  }
+
+  private async checkForNativeUpdate(release: AppRelease): Promise<void> {
+    if (!this.isNativeApp) return;
+    try {
+      const appInfo = await CapacitorApp.getInfo();
+      this.installedAppVersion.set(appInfo.version);
+      const installedBuild = Number(appInfo.build);
+      this.appUpdateAvailable.set(Number.isInteger(installedBuild) && release.versionCode > installedBuild);
+    } catch {
+      this.appUpdateAvailable.set(false);
+    }
   }
 
   private loadSharedFiles(silent = false): void {

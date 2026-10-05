@@ -58,6 +58,28 @@ public class ShareReceiverPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void openExternalUrl(PluginCall call) {
+        String value = call.getString("url");
+        if (value == null || value.isBlank()) {
+            call.reject("Hiányzik a megnyitandó cím.");
+            return;
+        }
+
+        try {
+            Uri uri = Uri.parse(value);
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                call.reject("Csak HTTP vagy HTTPS cím nyitható meg.");
+                return;
+            }
+            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, uri));
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("A külső böngésző megnyitása nem sikerült.", error);
+        }
+    }
+
+    @PluginMethod
     public void uploadFile(PluginCall call) {
         String id = call.getString("id");
         PendingFile pending;

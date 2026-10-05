@@ -178,6 +178,70 @@ p {
   line-height: 1;
 }
 
+.app-update-notice,
+.app-download-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 12px 0 18px;
+  padding: 15px 18px;
+  border: 1px solid #9cc8d7;
+  border-radius: 12px;
+  background: #eaf6f9;
+}
+
+.app-update-notice > div {
+  display: grid;
+  gap: 3px;
+}
+
+.app-update-notice strong,
+.app-download-panel h2 {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.app-update-notice span,
+.app-download-panel p,
+.app-download-panel small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.app-update-notice button {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--white);
+  background: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.app-download-panel {
+  margin-top: 0;
+  margin-bottom: 22px;
+  border-color: var(--line);
+  background: var(--white);
+}
+
+.app-download-panel h2,
+.app-download-panel p,
+.app-download-panel small {
+  margin: 0;
+}
+
+.app-download-panel p { margin-top: 4px; }
+
+.app-download-panel small {
+  display: block;
+  margin-top: 7px;
+}
+
 .view-tabs {
   display: flex;
   overflow-x: auto;
@@ -1919,6 +1983,19 @@ input:focus-visible {
   .storage-summary {
     gap: 16px;
     padding: 15px;
+  }
+
+  .app-update-notice,
+  .app-download-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 15px;
+  }
+
+  .app-update-notice button,
+  .app-download-panel .choose-button {
+    width: 100%;
   }
 
   .storage-title {

@@ -75,6 +75,33 @@ otthon internet nélkül is működik, de másik hálózatról még nem érhető
 telefon Megosztás menüjéből kapott fájlokat közvetlenül, memóriába másolás nélkül
 tölti fel; több fájl egy ZIP-ként vagy külön megosztásokként is küldhető.
 
+### Aláírt APK-kiadás
+
+A kiadási aláírókulcs és a jelszófájl kizárólag a fejlesztői Windows-gépen,
+a felhasználói könyvtár `AndroidKeys` mappájában marad. Nem kerül Gitbe és nem
+kerülhet a Dell szerverre. A `release` Gradle-feladat szándékosan hibával
+leáll, ha ez a helyi aláírási beállítás hiányzik.
+
+A szerver a `/srv/filedrop/data/releases` könyvtárból kizárólag egy APK-t ad ki:
+
+- `filedrop-<verzió>.apk` – az aláírt telepítő;
+- `latest.json` – az aktuális változat rövid leírása.
+
+Példa a manifestre:
+
+```json
+{
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "fileName": "filedrop-1.0.0.apk"
+}
+```
+
+Ha mindkét fájl ott van, a belépés nélküli LAN-kezdőoldal felajánlja az APK
+letöltését. Az Android alkalmazás a telepített `versionCode` értékét ehhez a
+manifesthez hasonlítja, és csak újabb változatnál ajánlja fel a letöltést. A
+telepítés mindig kézi Android-művelet marad.
+
 ## Docker
 
 Ellenőrzés és build:
@@ -103,11 +130,11 @@ A mostani LAN-változat HTTP-t használ. Ez családi, megbízható hálózaton k
 - Docker image build és korlátozott jogosultságú futtatás: sikeres.
 - Kétfájlos ZIP-feltöltés, közös kód, visszatöltés és mappaszerkezet: sikeres.
 - Android debug APK fordítása JDK 21-gyel: sikeres.
+- Android release APK 1.0.0 fordítása és v2-es aláírásának ellenőrzése: sikeres.
 
 ## Következő lépések
 
-1. Az új többfájlos/csomagos verzió telepítése a Dellre és helyi telefonos/laptopos próba.
-2. Aláírt Android release APK és biztonságos letöltési hely készítése.
+1. Az aláírt APK és a manifest telepítése a Dellre, majd helyi telefonos/laptopos próba.
+2. Mentési és próba-visszaállítási eljárás.
 3. Helyi DNS-név, HTTPS és külön Tailscale-hozzáférés.
-4. Mentési és visszaállítási eljárás.
-5. Külön, lejáró publikus letöltési link és feltöltési kérés idegeneknek.
+4. Külön, lejáró publikus letöltési link és feltöltési kérés idegeneknek.

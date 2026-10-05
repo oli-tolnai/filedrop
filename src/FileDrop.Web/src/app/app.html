@@ -28,6 +28,13 @@
       </div>
     }
 
+    @if (appUpdateAvailable() && appRelease(); as release) {
+      <section class="app-update-notice" role="status" aria-label="FileDrop frissítés érhető el">
+        <div><strong>Új FileDrop-verzió érhető el</strong><span>A telefonon {{ installedAppVersion() }}, a szerveren {{ release.versionName }} található.</span></div>
+        <button type="button" (click)="downloadAppRelease()">{{ release.versionName }} letöltése</button>
+      </section>
+    }
+
     <nav class="view-tabs" aria-label="FileDrop oldalak">
       <button type="button" [class.selected]="activeView() === 'download'" [attr.aria-current]="activeView() === 'download' ? 'page' : null" (click)="selectView('download')">
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3.5v9m0 0 3.5-3.5M10 12.5 6.5 9M4 14v1.25c0 .97.78 1.75 1.75 1.75h8.5c.97 0 1.75-.78 1.75-1.75V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -67,6 +74,17 @@
         <p class="storage-message">Tárhelyadatok betöltése…</p>
       }
     </section>
+
+    @if (activeView() === 'download' && !isNativeApp && appRelease(); as release) {
+      <section class="app-download-panel" aria-labelledby="app-download-heading">
+        <div>
+          <h2 id="app-download-heading">FileDrop Android alkalmazás</h2>
+          <p>Gyors feltöltés közvetlenül a telefon Megosztás menüjéből.</p>
+          <small>{{ release.versionName }} · {{ formatSize(release.sizeBytes) }}</small>
+        </div>
+        <button type="button" class="choose-button" (click)="downloadAppRelease()">APK letöltése</button>
+      </section>
+    }
 
     @if (activeView() === 'upload') {
     <div class="task-page upload-page">

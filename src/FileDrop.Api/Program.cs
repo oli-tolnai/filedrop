@@ -57,6 +57,7 @@ using (var scope = app.Services.CreateScope())
     var storage = scope.ServiceProvider.GetRequiredService<StorageCapacityService>();
     Directory.CreateDirectory(storage.StoragePath);
     Directory.CreateDirectory(storage.TemporaryPath);
+    Directory.CreateDirectory(storage.ReleaseDirectoryPath);
     var db = scope.ServiceProvider.GetRequiredService<FileDropDbContext>();
     db.Database.EnsureCreated();
     EnsureShareMetadataColumns(db);
@@ -73,6 +74,7 @@ if (hasBundledWebApp)
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/api/storage", (StorageCapacityService storage) => Results.Ok(storage.GetStatus()));
+app.MapAppReleaseEndpoints();
 app.MapShareEndpoints();
 app.MapAccountEndpoints();
 if (hasBundledWebApp)
