@@ -395,10 +395,13 @@
           <section class="app-download-panel settings-app-download" aria-labelledby="app-download-heading">
             <div>
               <h3 id="app-download-heading">FileDrop Android alkalmazás</h3>
-              <p>{{ isNativeApp ? 'Új alkalmazásverzió letöltése a telefonra.' : 'Gyors feltöltés közvetlenül a telefon Megosztás menüjéből.' }}</p>
-              <small>{{ release.versionName }} · {{ formatSize(release.sizeBytes) }}</small>
+              <p>{{ isNativeApp ? (appUpdateAvailable() ? 'Új alkalmazásverzió tölthető le a telefonra.' : 'A telepített alkalmazás a legfrissebb elérhető verzió.') : 'Gyors feltöltés közvetlenül a telefon Megosztás menüjéből.' }}</p>
+              <small>
+                @if (isNativeApp && installedAppVersion(); as installedVersion) { Telepítve: {{ installedVersion }} · }
+                Elérhető: {{ release.versionName }} · {{ formatSize(release.sizeBytes) }}
+              </small>
             </div>
-            <button type="button" class="choose-button" (click)="downloadAppRelease()">{{ isNativeApp ? 'Frissítés letöltése' : 'APK letöltése' }}</button>
+            <button type="button" class="choose-button" (click)="downloadAppRelease()">{{ isNativeApp && appUpdateAvailable() ? 'Frissítés letöltése' : 'APK letöltése' }}</button>
           </section>
         }
         @if (accountStatus()?.account?.isAdmin) {
