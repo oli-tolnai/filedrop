@@ -112,7 +112,7 @@ docker compose config --quiet
 docker compose build
 ```
 
-A Compose alapértelmezetten csak a Dell LAN-címén publikál: `192.168.0.34:8090`. Nem nyit routerportot, nem hoz létre Cloudflare Tunnel útvonalat, és egyelőre nem publikál külön a Tailscale-interfészen.
+A Compose alapértelmezetten a Dell LAN-címén publikál: `192.168.0.34:8090`. Emellett a Tailscale Serve számára fenntart egy csak helyi loopback-portot: `127.0.0.1:8091`; ez LAN-ról nem érhető el. A Compose nem nyit routerportot és nem hoz létre Cloudflare Tunnel útvonalat.
 
 Az éles `.env` fájl nem kerül verziókezelésbe. A konténer nem rootként fut, a saját rendszerfájlrendszere csak olvasható, minden capability el van dobva, és kizárólag `/srv/filedrop/data` írható számára.
 
