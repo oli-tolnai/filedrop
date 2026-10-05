@@ -35,12 +35,17 @@ A `filedrop.home.arpa` név egyelőre nem része a feladatnak. Routerportot nem 
 
 ## 3. Egyszer használható nyilvános feltöltési meghívó
 
-Példa: telefonon, bejelentkezve létrehozol egy meghívót, majd az iskolai gépen beírod a rövid címet, és egy fájlt feltöltesz a Dell szerverre.
+Két azonos módon védett felhasználási eset tartozik ide:
+
+- telefonon létrehozol egy meghívót, majd például az iskolai gépen te töltesz fel vele a Dell szerverre;
+- elküldöd a meghívót valakinek, aki ezen keresztül fájlt vagy képeket küld neked anélkül, hogy FileDrop-fiókot vagy Tailscale-hozzáférést kapna.
 
 - Meghívót csak bejelentkezett családtag hozhat létre LAN-ról vagy Tailscale-ről.
-- Létrehozáskor megadható a lejárat, a maximális fájlméret és hogy egy fájl vagy egy csomag tölthető-e fel.
+- Létrehozáskor megadható a lejárat, a maximális összméret, valamint hogy egy fájl vagy több fájl tölthető-e fel. Több fájl egyetlen beérkező csomagként tartozik a meghívóhoz.
+- A meghívónak adhatsz címet, hogy később tudd, kitől és mit vársz. A feltöltő opcionálisan megadhatja a nevét és egy rövid megjegyzést, de fiókot nem hozhat létre.
 - A cím rövid, de interneten nem lehet hat karakteres: legalább 10 véletlen, könnyen gépelhető karaktert használunk, például `drop.tolnaioli.hu/u/7KDM-4QPX-9R`.
 - A meghívó legfeljebb 10–15 percig él, az első sikeres feltöltés után azonnal érvénytelenné válik, és kézzel is visszavonható.
+- A sikeres feltöltés bekerül a meghívót létrehozó felhasználó beérkezett fájljai közé; más családtag csak akkor látja, ha a tulajdonos később közössé teszi.
 - A nyilvános oldalon nincs fájllista, bejelentkezés, letöltés, adminfelület vagy általános feltöltés; csak az adott meghívó használható.
 - Cloudflare Tunnel kizárólag ezt a szűk nyilvános végpontot teszi elérhetővé. A fő FileDrop felület LAN/Tailscale mögött marad.
 - Szükséges sebesség- és próbálkozáskorlát, tárhelyellenőrzés, fájlnév-tisztítás, naplózás és a sikertelen feltöltések automatikus takarítása.
