@@ -8,6 +8,7 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 - Bejelentkezés után látható közös LAN-lista, illetve linkkel, QR-kóddal vagy hat karakteres kóddal elérhető rejtett megosztás.
 - Lejárat: első sikeres letöltés, 15 perc, 1 óra (alapértelmezett), 24 óra, 7 nap vagy kézi visszavonás.
 - Valódi fájlfeltöltés folyamatjelzővel és letöltés eredeti fájlnéven.
+- Több fájl vagy teljes mappa választható. Ezek kérés szerint egyetlen, mappaszerkezetet megőrző ZIP-csomagot és közös kódot kapnak, vagy külön megosztásokként készülnek el.
 - Tulajdonosi és családtag-fiókok biztonságosan hash-elt jelszóval.
 - A fiókjelszó legalább 4 számjegy lehet; ez csak megbízható LAN-on kényelmes, Tailscale-es távoli használat előtt erősebb védelem szükséges.
 - A közös fájlok listája és közvetlen letöltése belépést kér; a kódos letöltés fiók nélkül is használható.
@@ -15,7 +16,7 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 - Egy fiókhoz több, külön megnevezett eszköz munkamenete tartozhat; minden eszköz ugyanazt a saját előzményt látja.
 - A tulajdonos külön adminisztrációs nézetben látja a családtag-fiókokat és új fiókot hozhat létre. A saját aktív megosztás visszavonható; a fizikai fájl törlődik, az előzmény megmarad.
 - A feltöltéshez opcionális megnevezés és megjegyzés, a közös listában pedig feltöltőnév tartozhat.
-- A webalkalmazás PWA-ként telepíthető, és telepítés után a telefon megosztásmenüjéből fogadott fájlokat is előkészíti feltöltésre.
+- A webalkalmazás PWA-alapjai elkészültek. Az Android Capacitor-alkalmazás a rendszer Megosztás menüjéből egy vagy több fájlt is átvesz, majd ugyanazt a csomag/külön módot kínálja.
 - A kódpróbálkozás és a bejelentkezés sebességkorlátozott.
 - A lejárt fájlok és munkamenetek automatikusan takarítódnak, újraindítás után is.
 
@@ -66,6 +67,14 @@ telefonos böngésző PWA-telepítéshez HTTPS-t kér; a sima
 nem feltétlenül tekinthető telepíthető, biztonságos eredetnek. Ehhez később
 Tailscale Serve vagy helyi HTTPS-proxy szükséges.
 
+## Android alkalmazás
+
+Az Android-projekt a `src/FileDrop.Web/android` könyvtárban található. A jelenlegi
+alkalmazás a LAN-on futó `http://192.168.0.34:8090` szolgáltatást nyitja meg, ezért
+otthon internet nélkül is működik, de másik hálózatról még nem érhető el. A
+telefon Megosztás menüjéből kapott fájlokat közvetlenül, memóriába másolás nélkül
+tölti fel; több fájl egy ZIP-ként vagy külön megosztásokként is küldhető.
+
 ## Docker
 
 Ellenőrzés és build:
@@ -92,11 +101,13 @@ A mostani LAN-változat HTTP-t használ. Ez családi, megbízható hálózaton k
 - Letöltött fájl SHA-256 egyezés: sikeres.
 - Többeszközös belépés, saját előzmény és visszavonás: sikeres.
 - Docker image build és korlátozott jogosultságú futtatás: sikeres.
+- Kétfájlos ZIP-feltöltés, közös kód, visszatöltés és mappaszerkezet: sikeres.
+- Android debug APK fordítása JDK 21-gyel: sikeres.
 
 ## Következő lépések
 
-1. Jóváhagyás után telepítés a Dellre `/opt/stacks/filedrop` és `/srv/filedrop/data` útvonalakkal, csak a `192.168.0.34:8090` LAN-címen.
-2. Helyi telefonos/laptopos próba és mentési eljárás.
-3. HTTPS és külön Tailscale-hozzáférés.
-4. Android alkalmazás a Megosztás menü integrációjával.
+1. Az új többfájlos/csomagos verzió telepítése a Dellre és helyi telefonos/laptopos próba.
+2. Aláírt Android release APK és biztonságos letöltési hely készítése.
+3. Helyi DNS-név, HTTPS és külön Tailscale-hozzáférés.
+4. Mentési és visszaállítási eljárás.
 5. Külön, lejáró publikus letöltési link és feltöltési kérés idegeneknek.

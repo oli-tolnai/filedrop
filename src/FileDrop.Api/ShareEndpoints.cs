@@ -1,6 +1,9 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Net.Http.Headers;
 
 public static class ShareEndpoints
 {
@@ -11,6 +14,7 @@ public static class ShareEndpoints
     {
         endpoints.MapGet("/api/shares", ListSharedFilesAsync);
         endpoints.MapPost("/api/shares", CreateShareAsync);
+        endpoints.MapPost("/api/shares/bundle", CreateBundleAsync);
         endpoints.MapPost("/api/shares/resolve-code", ResolveCodeAsync)
             .RequireRateLimiting("share-code");
         endpoints.MapGet("/api/shares/code/{code}/download", DownloadByCodeAsync)
@@ -19,6 +23,144 @@ public static class ShareEndpoints
         endpoints.MapGet("/api/me/shares", ListMySharesAsync);
         endpoints.MapDelete("/api/me/shares/{id:guid}", DeleteMyShareAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> CreateBundleAsync(
+        HttpRequest request,
+        string visibility,
+        string expiration,
+        string? title,
+        string? note,
+        string? bundleName,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        UploadReservationService reservations,
+        AccountSessionService sessions,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var owner = await sessions.GetCurrentAsync(context, db, cancellationToken);
+        if (owner is null) return Results.Unauthorized();
+
+        visibility = visibility.Trim().ToLowerInvariant();
+        if (visibility is not ("shared" or "code"))
+            return Results.BadRequest(new ApiError("A láthatóság csak 'shared' vagy 'code' lehet."));
+        if (!TryGetExpiration(expiration, out var expiresAtUtc, out var deleteAfterFirstDownload))
+            return Results.BadRequest(new ApiError("Ismeretlen lejárati beállítás."));
+
+        var safeTitle = SanitizeMetadata(title, 120);
+        if (!string.IsNullOrWhiteSpace(title) && safeTitle is null)
+            return Results.BadRequest(new ApiError("A cím legfeljebb 120 karakter lehet."));
+        var safeNote = SanitizeMetadata(note, 1000);
+        if (!string.IsNullOrWhiteSpace(note) && safeNote is null)
+            return Results.BadRequest(new ApiError("A megjegyzés legfeljebb 1000 karakter lehet."));
+
+        var safeBundleName = SanitizeFileName(bundleName ?? "filedrop-csomag.zip");
+        if (safeBundleName is null)
+            return Results.BadRequest(new ApiError("Érvénytelen csomagnév."));
+        if (!safeBundleName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) safeBundleName += ".zip";
+
+        if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType)
+            || !mediaType.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(mediaType.Boundary.Value))
+            return Results.BadRequest(new ApiError("A csomag feltöltéséhez multipart/form-data kérés szükséges."));
+
+        var contentLength = request.ContentLength;
+        if (contentLength is null) return Results.StatusCode(StatusCodes.Status411LengthRequired);
+        if (contentLength <= 0) return Results.BadRequest(new ApiError("Üres csomag nem tölthető fel."));
+
+        using var reservation = reservations.TryReserve(contentLength.Value, storage.GetUploadCapacityBytes());
+        if (reservation is null)
+            return Results.Json(new ApiError("Nincs elegendő hely a 100 GB-os biztonsági tartalék megtartásával."), statusCode: StatusCodes.Status507InsufficientStorage);
+
+        Directory.CreateDirectory(storage.StoragePath);
+        Directory.CreateDirectory(storage.TemporaryPath);
+        var id = Guid.NewGuid();
+        var storedFileName = $"{id:N}.zip";
+        var temporaryFilePath = Path.Combine(storage.TemporaryPath, $"{id:N}.uploading");
+        var finalFilePath = Path.Combine(storage.StoragePath, storedFileName);
+
+        try
+        {
+            var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value!;
+            var reader = new MultipartReader(boundary, request.Body);
+            var entryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var fileCount = 0;
+
+            await using (var output = new FileStream(temporaryFilePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    MultipartSection? section;
+                    while ((section = await reader.ReadNextSectionAsync(cancellationToken)) is not null)
+                    {
+                        if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition)
+                            || !disposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase)
+                            || (string.IsNullOrWhiteSpace(disposition.FileName.Value) && string.IsNullOrWhiteSpace(disposition.FileNameStar.Value)))
+                            continue;
+
+                        var fieldName = HeaderUtilities.RemoveQuotes(disposition.Name).Value ?? "";
+                        var suppliedPath = fieldName.StartsWith("file:", StringComparison.Ordinal)
+                            ? Uri.UnescapeDataString(fieldName[5..])
+                            : HeaderUtilities.RemoveQuotes(disposition.FileNameStar).Value
+                                ?? HeaderUtilities.RemoveQuotes(disposition.FileName).Value
+                                ?? "fajl";
+                        var safeEntryName = MakeSafeZipEntryName(suppliedPath, entryNames);
+                        if (safeEntryName is null)
+                            return Results.BadRequest(new ApiError("A csomag egyik fájlneve vagy mappaútvonala érvénytelen."));
+
+                        var entry = archive.CreateEntry(safeEntryName, CompressionLevel.NoCompression);
+                        await using var entryStream = entry.Open();
+                        await section.Body.CopyToAsync(entryStream, 1024 * 1024, cancellationToken);
+                        fileCount++;
+                    }
+                }
+                await output.FlushAsync(cancellationToken);
+            }
+
+            if (fileCount == 0)
+                return Results.BadRequest(new ApiError("A csomag nem tartalmaz fájlt."));
+
+            var sizeBytes = new FileInfo(temporaryFilePath).Length;
+            File.Move(temporaryFilePath, finalFilePath);
+            var share = new SharedFile
+            {
+                Id = id,
+                OriginalFileName = safeBundleName,
+                Title = safeTitle,
+                Note = safeNote,
+                StoredFileName = storedFileName,
+                ContentType = "application/zip",
+                SizeBytes = sizeBytes,
+                Visibility = visibility,
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = expiresAtUtc,
+                DeleteAfterFirstDownload = deleteAfterFirstDownload,
+                OwnerUserId = owner.Id,
+            };
+
+            await AccessCodeGate.WaitAsync(cancellationToken);
+            try
+            {
+                share.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
+                db.SharedFiles.Add(share);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            finally { AccessCodeGate.Release(); }
+
+            return Results.Created($"/api/shares/{share.Id}/download", ToDto(share));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Results.StatusCode(499);
+        }
+        catch
+        {
+            SafeDelete(temporaryFilePath);
+            SafeDelete(finalFilePath);
+            throw;
+        }
+        finally { SafeDelete(temporaryFilePath); }
     }
 
     private static async Task<IResult> ListSharedFilesAsync(
@@ -403,6 +545,39 @@ public static class ShareEndpoints
         }
 
         return result;
+    }
+
+    private static string? MakeSafeZipEntryName(string suppliedPath, HashSet<string> existingNames)
+    {
+        var parts = suppliedPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0 || parts.Any(part => part is "." or "..")) return null;
+
+        var safeParts = new List<string>(parts.Length);
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.Length > 255 || trimmed.Any(char.IsControl)) return null;
+            foreach (var invalid in Path.GetInvalidFileNameChars()) trimmed = trimmed.Replace(invalid, '_');
+            if (trimmed is "." or ".." || string.IsNullOrWhiteSpace(trimmed)) return null;
+            safeParts.Add(trimmed);
+        }
+
+        var candidate = string.Join('/', safeParts);
+        if (candidate.Length > 1000) return null;
+        if (existingNames.Add(candidate)) return candidate;
+
+        var directory = string.Join('/', safeParts.Take(safeParts.Count - 1));
+        var fileName = safeParts[^1];
+        var extension = Path.GetExtension(fileName);
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        for (var index = 2; index <= 9999; index++)
+        {
+            var renamed = $"{baseName} ({index}){extension}";
+            var path = string.IsNullOrEmpty(directory) ? renamed : $"{directory}/{renamed}";
+            if (existingNames.Add(path)) return path;
+        }
+
+        return null;
     }
 
     private static string SanitizeContentType(string? contentType)

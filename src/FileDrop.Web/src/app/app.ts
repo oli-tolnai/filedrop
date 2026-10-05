@@ -1,9 +1,12 @@
 import { HttpClient, HttpErrorResponse, HttpEventType, HttpHeaders, HttpParams, HttpRequest } from '@angular/common/http';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import * as QRCode from 'qrcode';
+import { NativeSharedFile, ShareReceiver } from './share-receiver';
 
 type ViewName = 'download' | 'upload' | 'mine' | 'admin';
 type Visibility = 'shared' | 'code';
+type UploadMode = 'bundle' | 'separate';
 
 interface StorageStatus {
   fileDropUsedBytes: number;
@@ -58,8 +61,13 @@ interface AdminUser {
   styleUrl: './app.css',
   templateUrl: './app.html',
 })
-export class App implements OnInit {
+export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
+  private refreshTimer: number | null = null;
+  private nativeListeners: PluginListenerHandle[] = [];
+  private readonly refreshWhenVisible = () => {
+    if (document.visibilityState === 'visible') this.refreshLiveData();
+  };
 
   protected readonly activeView = signal<ViewName>('download');
   protected readonly apiStatus = signal<'checking' | 'online' | 'offline'>('checking');
@@ -67,7 +75,9 @@ export class App implements OnInit {
   protected readonly storageStatus = signal<StorageStatus | null>(null);
   protected readonly sharedFiles = signal<Share[]>([]);
   protected readonly filesState = signal<'loading' | 'ready' | 'unauthorized' | 'error'>('loading');
-  protected readonly selectedFile = signal<File | null>(null);
+  protected readonly selectedFiles = signal<File[]>([]);
+  protected readonly nativeSharedFiles = signal<NativeSharedFile[]>([]);
+  protected readonly uploadMode = signal<UploadMode>('bundle');
   protected readonly shareTitle = signal('');
   protected readonly shareNote = signal('');
   protected readonly visibility = signal<Visibility>('shared');
@@ -77,7 +87,10 @@ export class App implements OnInit {
   protected readonly uploading = signal(false);
   protected readonly uploadProgress = signal(0);
   protected readonly createdShare = signal<Share | null>(null);
+  protected readonly createdShares = signal<Share[]>([]);
   protected readonly qrCodeDataUrl = signal('');
+  protected readonly shareToolsShare = signal<Share | null>(null);
+  protected readonly shareToolsQrCode = signal('');
   protected readonly accountStatus = signal<AccountStatus | null>(null);
   protected readonly ownedShares = signal<OwnedShare[]>([]);
   protected readonly showHistory = signal(false);
@@ -103,6 +116,17 @@ export class App implements OnInit {
     this.loadAccount();
     this.loadPendingCode();
     void this.loadPendingShareFile();
+    void this.initializeNativeShareReceiver();
+    this.refreshTimer = window.setInterval(() => this.refreshLiveData(), 5000);
+    window.addEventListener('focus', this.refreshWhenVisible);
+    document.addEventListener('visibilitychange', this.refreshWhenVisible);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer !== null) window.clearInterval(this.refreshTimer);
+    window.removeEventListener('focus', this.refreshWhenVisible);
+    document.removeEventListener('visibilitychange', this.refreshWhenVisible);
+    for (const listener of this.nativeListeners) void listener.remove();
   }
 
   protected selectView(view: ViewName): void {
@@ -199,12 +223,12 @@ export class App implements OnInit {
 
   protected selectFile(event: Event): void {
     const input = event.target as HTMLInputElement;
-    this.setSelectedFile(input.files?.item(0) ?? null);
+    this.setSelectedFiles(Array.from(input.files ?? []));
   }
 
   protected dropFile(event: DragEvent): void {
     event.preventDefault();
-    this.setSelectedFile(event.dataTransfer?.files.item(0) ?? null);
+    this.setSelectedFiles(Array.from(event.dataTransfer?.files ?? []));
   }
 
   protected keepFileHere(event: DragEvent): void {
@@ -214,6 +238,7 @@ export class App implements OnInit {
   protected setVisibility(value: Visibility): void {
     this.visibility.set(value);
     this.createdShare.set(null);
+    this.createdShares.set([]);
     this.qrCodeDataUrl.set('');
   }
 
@@ -237,26 +262,154 @@ export class App implements OnInit {
     this.shareNote.set((event.target as HTMLTextAreaElement).value);
   }
 
+  protected setUploadMode(value: UploadMode): void {
+    this.uploadMode.set(value);
+    this.createdShare.set(null);
+    this.createdShares.set([]);
+    this.qrCodeDataUrl.set('');
+  }
+
   protected requestUpload(): void {
-    const file = this.selectedFile();
+    const files = this.selectedFiles();
+    const nativeFiles = this.nativeSharedFiles();
     if (!this.accountStatus()?.account) {
       this.notice.set('A feltöltéshez előbb be kell jelentkezni.');
       this.activeView.set('mine');
       return;
     }
-    if (!file || !this.canSelectedFileFit() || this.uploading()) return;
+    if ((!files.length && !nativeFiles.length) || !this.canSelectedFilesFit() || this.uploading()) return;
 
     this.uploading.set(true);
     this.uploadProgress.set(0);
     this.createdShare.set(null);
+    this.createdShares.set([]);
     this.qrCodeDataUrl.set('');
     this.notice.set('');
+
+    if (nativeFiles.length) {
+      void this.uploadNativeFiles(nativeFiles);
+    } else if (files.length > 1 && this.uploadMode() === 'bundle') {
+      this.uploadBundle(files);
+    } else {
+      this.uploadFilesSequentially(files, 0, 0, this.selectedTotalBytes());
+    }
+  }
+
+  private async uploadNativeFiles(files: NativeSharedFile[]): Promise<void> {
+    const common = {
+      serverUrl: window.location.origin,
+      visibility: this.visibility(),
+      expiration: this.expiration(),
+      title: this.shareTitle(),
+      note: this.shareNote(),
+    };
+    try {
+      if (files.length > 1 && this.uploadMode() === 'bundle') {
+        const requestedName = this.shareTitle().trim() || 'filedrop-csomag';
+        const result = await ShareReceiver.uploadBundle({
+          ...common,
+          bundleName: requestedName.toLowerCase().endsWith('.zip') ? requestedName : `${requestedName}.zip`,
+        });
+        const share = JSON.parse(result.response) as Share;
+        this.createdShare.set(share);
+        this.createdShares.set([share]);
+        void this.createQrCode(this.getShareLink(share));
+        this.notice.set(`${files.length} fájl egy ZIP-csomagban elkészült.`);
+      } else {
+        let completedBytes = 0;
+        for (const file of files) {
+          const result = await ShareReceiver.uploadFile({ ...common, id: file.id, title: files.length === 1 ? this.shareTitle() : file.name });
+          const share = JSON.parse(result.response) as Share;
+          this.createdShares.update(items => [...items, share]);
+          if (files.length === 1) {
+            this.createdShare.set(share);
+            void this.createQrCode(this.getShareLink(share));
+          }
+          completedBytes += file.size;
+          this.uploadProgress.set(Math.round((completedBytes / this.selectedTotalBytes()) * 100));
+        }
+        this.notice.set(files.length === 1 ? 'A fájl feltöltése elkészült.' : `${files.length} külön fájl feltöltése elkészült.`);
+      }
+      this.nativeSharedFiles.set([]);
+      this.uploadProgress.set(100);
+      this.loadSharedFiles(true);
+      this.loadOwnedShares(true);
+      this.loadStorage(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'A telefonról indított feltöltés nem sikerült.';
+      this.notice.set(message);
+    } finally {
+      this.uploading.set(false);
+    }
+  }
+
+  private uploadBundle(files: File[]): void {
+    const form = new FormData();
+    for (const file of files) {
+      const path = file.webkitRelativePath || file.name;
+      form.append(`file:${encodeURIComponent(path)}`, file, file.name);
+    }
+
+    const firstPath = files[0]?.webkitRelativePath || '';
+    const folderName = firstPath.includes('/') ? firstPath.split('/')[0] : '';
+    const requestedName = this.shareTitle().trim() || folderName || 'filedrop-csomag';
+    const bundleName = requestedName.toLowerCase().endsWith('.zip') ? requestedName : `${requestedName}.zip`;
+    const parameters = new HttpParams()
+      .set('visibility', this.visibility())
+      .set('expiration', this.expiration())
+      .set('title', this.shareTitle())
+      .set('note', this.shareNote())
+      .set('bundleName', bundleName);
+    const request = new HttpRequest('POST', `/api/shares/bundle?${parameters.toString()}`, form, {
+      reportProgress: true,
+      responseType: 'json',
+    });
+
+    this.http.request<Share>(request).subscribe({
+      next: (event) => {
+        if (event.type === HttpEventType.UploadProgress) {
+          const total = event.total || this.selectedTotalBytes();
+          this.uploadProgress.set(total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : 0);
+        }
+        if (event.type === HttpEventType.Response && event.body) {
+          this.createdShare.set(event.body);
+          this.createdShares.set([event.body]);
+          this.uploading.set(false);
+          this.uploadProgress.set(100);
+          this.notice.set(`${files.length} fájl egy ZIP-csomagban elkészült.`);
+          void this.createQrCode(this.getShareLink(event.body));
+          this.loadSharedFiles(true);
+          this.loadOwnedShares(true);
+          this.loadStorage(true);
+        }
+      },
+      error: (error: HttpErrorResponse) => {
+        this.notice.set(this.readError(error, 'A ZIP-csomag feltöltése nem sikerült.'));
+        this.uploading.set(false);
+      },
+    });
+  }
+
+  private uploadFilesSequentially(files: File[], index: number, completedBytes: number, totalBytes: number): void {
+    if (index >= files.length) {
+      this.uploading.set(false);
+      this.uploadProgress.set(100);
+      this.notice.set(files.length === 1 ? 'A fájl feltöltése elkészült.' : `${files.length} fájl feltöltése elkészült.`);
+      this.loadSharedFiles(true);
+      this.loadOwnedShares(true);
+      this.loadStorage(true);
+      return;
+    }
+
+    const file = files[index];
+    const relativePath = file.webkitRelativePath || file.name;
+    const automaticTitle = files.length > 1 && relativePath !== file.name ? relativePath.slice(0, 120) : '';
 
     const parameters = new HttpParams()
       .set('fileName', file.name)
       .set('visibility', this.visibility())
       .set('expiration', this.expiration())
-      .set('title', this.shareTitle())
+      .set('title', files.length === 1 ? this.shareTitle() : automaticTitle)
       .set('note', this.shareNote());
     const request = new HttpRequest('POST', `/api/shares?${parameters.toString()}`, file, {
       headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
@@ -267,25 +420,27 @@ export class App implements OnInit {
     this.http.request<Share>(request).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.UploadProgress) {
-          const total = event.total ?? file.size;
-          this.uploadProgress.set(total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : 0);
+          const loaded = Math.min(event.loaded, file.size);
+          this.uploadProgress.set(totalBytes > 0
+            ? Math.min(100, Math.round(((completedBytes + loaded) / totalBytes) * 100))
+            : 0);
         }
 
         if (event.type === HttpEventType.Response && event.body) {
-          this.uploadProgress.set(100);
-          this.createdShare.set(event.body);
-          this.notice.set('A fájl feltöltése elkészült.');
-          void this.createQrCode(this.getShareLink(event.body));
-          this.loadSharedFiles();
-          this.loadOwnedShares();
-          this.loadStorage();
+          this.createdShares.update(items => [...items, event.body!]);
+          if (files.length === 1) {
+            this.createdShare.set(event.body);
+            void this.createQrCode(this.getShareLink(event.body));
+          }
+          this.uploadFilesSequentially(files, index + 1, completedBytes + file.size, totalBytes);
         }
       },
       error: (error: HttpErrorResponse) => {
-        this.notice.set(this.readError(error, 'A feltöltés nem sikerült.'));
+        const completed = this.createdShares().length;
+        const prefix = completed ? `${completed} fájl elkészült. ` : '';
+        this.notice.set(prefix + this.readError(error, `A(z) „${relativePath}” feltöltése nem sikerült.`));
         this.uploading.set(false);
       },
-      complete: () => this.uploading.set(false),
     });
   }
 
@@ -345,20 +500,30 @@ export class App implements OnInit {
   }
 
   protected restoreShareTools(share: Share): void {
-    this.activeView.set('upload');
-    this.createdShare.set(share);
-    this.notice.set('A megosztás linkje és QR-kódja újra megnyitható.');
-    void this.createQrCode(this.getShareLink(share));
-    window.setTimeout(() => {
-      document.querySelector('.share-result')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    this.shareToolsShare.set(share);
+    this.shareToolsQrCode.set('');
+    void this.createQrCode(this.getShareLink(share), 'tools');
   }
 
-  protected canSelectedFileFit(): boolean {
-    const file = this.selectedFile();
+  protected closeShareTools(): void {
+    this.shareToolsShare.set(null);
+    this.shareToolsQrCode.set('');
+  }
+
+  protected selectedTotalBytes(): number {
+    const nativeFiles = this.nativeSharedFiles();
+    return (nativeFiles.length ? nativeFiles : this.selectedFiles()).reduce((total, file) => total + file.size, 0);
+  }
+
+  protected selectedItemCount(): number {
+    return this.nativeSharedFiles().length || this.selectedFiles().length;
+  }
+
+  protected canSelectedFilesFit(): boolean {
+    const files = this.nativeSharedFiles().length ? this.nativeSharedFiles() : this.selectedFiles();
     const storage = this.storageStatus();
-    if (!file || !storage) return false;
-    return file.size <= storage.uploadCapacityBytes;
+    if (!files.length || !storage) return false;
+    return this.selectedTotalBytes() <= storage.uploadCapacityBytes;
   }
 
   protected formatSize(bytes: number): string {
@@ -399,41 +564,47 @@ export class App implements OnInit {
     }).format(new Date(normalized));
   }
 
-  private setSelectedFile(file: File | null): void {
-    this.selectedFile.set(file);
+  private setSelectedFiles(files: File[]): void {
+    this.nativeSharedFiles.set([]);
+    if (Capacitor.isNativePlatform()) void ShareReceiver.clearPendingFiles();
+    this.selectedFiles.set(files);
+    if (files.length > 1) this.uploadMode.set('bundle');
     this.shareTitle.set('');
     this.shareNote.set('');
     this.createdShare.set(null);
+    this.createdShares.set([]);
     this.qrCodeDataUrl.set('');
     this.notice.set('');
 
     const storage = this.storageStatus();
-    if (file && storage && file.size > storage.uploadCapacityBytes) {
-      this.notice.set('Ehhez a fájlhoz nincs elég hely a 100 GB-os biztonsági tartalék megtartásával.');
+    if (files.length && storage && this.selectedTotalBytes() > storage.uploadCapacityBytes) {
+      this.notice.set('A kiválasztott fájlokhoz nincs elég hely a 100 GB-os biztonsági tartalék megtartásával.');
     }
   }
 
-  private loadStorage(): void {
-    this.storageState.set('loading');
+  private loadStorage(silent = false): void {
+    if (!silent) this.storageState.set('loading');
     this.http.get<StorageStatus>('/api/storage').subscribe({
       next: (result) => {
         this.storageStatus.set(result);
         this.storageState.set('ready');
       },
-      error: () => this.storageState.set('error'),
+      error: () => { if (!silent) this.storageState.set('error'); },
     });
   }
 
-  private loadSharedFiles(): void {
-    this.filesState.set('loading');
+  private loadSharedFiles(silent = false): void {
+    if (!silent) this.filesState.set('loading');
     this.http.get<Share[]>('/api/shares').subscribe({
       next: (files) => {
         this.sharedFiles.set(files);
         this.filesState.set('ready');
       },
       error: (error: HttpErrorResponse) => {
-        this.sharedFiles.set([]);
-        this.filesState.set(error.status === 401 ? 'unauthorized' : 'error');
+        if (!silent || error.status === 401) {
+          this.sharedFiles.set([]);
+          this.filesState.set(error.status === 401 ? 'unauthorized' : 'error');
+        }
       },
     });
   }
@@ -457,11 +628,18 @@ export class App implements OnInit {
     });
   }
 
-  private loadOwnedShares(): void {
+  private loadOwnedShares(silent = false): void {
     this.http.get<OwnedShare[]>('/api/me/shares').subscribe({
       next: (items) => this.ownedShares.set(items),
-      error: () => this.ownedShares.set([]),
+      error: () => { if (!silent) this.ownedShares.set([]); },
     });
+  }
+
+  private refreshLiveData(): void {
+    if (document.visibilityState !== 'visible' || !this.accountStatus()?.account) return;
+    this.loadSharedFiles(true);
+    this.loadOwnedShares(true);
+    if (this.activeView() === 'upload') this.loadStorage(true);
   }
 
   private loadAdminUsers(): void {
@@ -484,6 +662,37 @@ export class App implements OnInit {
     window.setTimeout(() => this.requestDownload(), 0);
   }
 
+  private async initializeNativeShareReceiver(): Promise<void> {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const shareListener = await ShareReceiver.addListener('shareReceived', result => this.acceptNativeFiles(result.files));
+      const progressListener = await ShareReceiver.addListener('uploadProgress', progress => {
+        this.uploadProgress.set(progress.total > 0 ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : 0);
+      });
+      this.nativeListeners.push(shareListener, progressListener);
+      const pending = await ShareReceiver.getPendingFiles();
+      if (pending.files.length) this.acceptNativeFiles(pending.files);
+    } catch {
+      this.notice.set('A telefon Megosztás menüjéből érkező fájlokat most nem sikerült átvenni.');
+    }
+  }
+
+  private acceptNativeFiles(files: NativeSharedFile[]): void {
+    if (!files.length) return;
+    this.selectedFiles.set([]);
+    this.nativeSharedFiles.set(files);
+    this.uploadMode.set(files.length > 1 ? 'bundle' : 'separate');
+    this.shareTitle.set('');
+    this.shareNote.set('');
+    this.createdShare.set(null);
+    this.createdShares.set([]);
+    this.qrCodeDataUrl.set('');
+    this.activeView.set('upload');
+    this.notice.set(files.length === 1
+      ? 'A Megosztás menüből érkező fájl készen áll a feltöltésre.'
+      : `${files.length} fájl érkezett a Megosztás menüből. Válaszd ki, hogy egy csomag vagy külön megosztások legyenek.`);
+  }
+
   private async loadPendingShareFile(): Promise<void> {
     if (!new URLSearchParams(window.location.search).has('shared')) return;
     try {
@@ -496,7 +705,7 @@ export class App implements OnInit {
       db.close();
       if (!entry) return;
       const file = new File([entry.blob], entry.name, { type: entry.type, lastModified: entry.lastModified });
-      this.setSelectedFile(file);
+      this.setSelectedFiles([file]);
       this.activeView.set('upload');
       this.notice.set('A megosztásmenüből érkező fájl készen áll a feltöltésre.');
       await this.deletePendingShareFile();
@@ -551,14 +760,15 @@ export class App implements OnInit {
     return new FormData(event.currentTarget as HTMLFormElement);
   }
 
-  private async createQrCode(downloadUrl: string): Promise<void> {
+  private async createQrCode(downloadUrl: string, target: 'upload' | 'tools' = 'upload'): Promise<void> {
     const dataUrl = await QRCode.toDataURL(this.getAbsoluteDownloadUrl(downloadUrl), {
       errorCorrectionLevel: 'M',
       margin: 2,
       width: 220,
       color: { dark: '#172b3a', light: '#ffffff' },
     });
-    this.qrCodeDataUrl.set(dataUrl);
+    if (target === 'tools') this.shareToolsQrCode.set(dataUrl);
+    else this.qrCodeDataUrl.set(dataUrl);
   }
 
   private readError(error: HttpErrorResponse, fallback: string): string {

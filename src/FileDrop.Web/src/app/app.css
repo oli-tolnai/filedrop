@@ -608,6 +608,59 @@ h1 {
   border: 0;
 }
 
+.upload-mode-fieldset {
+  min-width: 0;
+  margin: 18px 0 0;
+  padding: 14px;
+  border: 1px solid #bfd3dd;
+  border-radius: 12px;
+  background: #f8fbfc;
+}
+
+.upload-mode-fieldset legend {
+  padding: 0 6px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.upload-mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.upload-mode-option {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--white);
+  cursor: pointer;
+  text-align: left;
+}
+
+.upload-mode-option.chosen {
+  border-color: var(--blue);
+  background: #eef8fc;
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.upload-mode-option > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.upload-mode-option small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .share-metadata {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
@@ -909,6 +962,63 @@ h1 {
   font-weight: 680;
 }
 
+.folder-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid #9fbfce;
+  border-radius: 8px;
+  color: var(--blue);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.folder-button:hover {
+  color: var(--white);
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+}
+
+.chosen-file-list {
+  display: grid;
+  width: min(100%, 470px);
+  max-height: 118px;
+  overflow-y: auto;
+  gap: 4px;
+  padding: 9px 12px;
+  border: 1px solid #c7dce5;
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, .72);
+  font-size: 12px;
+  text-align: left;
+}
+
+.chosen-file-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-hint {
+  align-self: stretch;
+  margin: 0;
+  padding: 11px 12px;
+  border-left: 3px solid #83b6ca;
+  color: var(--muted);
+  background: #f1f8fa;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .copy-link:hover,
 .download-button:hover {
   color: var(--white);
@@ -1200,6 +1310,143 @@ h1 {
   color: var(--white);
   border-color: var(--blue);
   background: var(--blue);
+}
+
+.batch-result {
+  display: grid;
+  gap: 15px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid #83b6ca;
+  border-radius: 12px;
+  background: #eef8fa;
+}
+
+.batch-result h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 19px;
+}
+
+.batch-result-list {
+  display: grid;
+  max-height: 310px;
+  overflow-y: auto;
+  border-top: 1px solid #bfd8e2;
+}
+
+.batch-result-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid #bfd8e2;
+}
+
+.batch-result-list article > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.batch-result-list article strong {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-result-list article span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.batch-result-list code {
+  color: var(--blue);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: .12em;
+}
+
+.share-tools-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 38, 52, .58);
+  backdrop-filter: blur(4px);
+}
+
+.share-tools-dialog {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: min(100%, 650px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  align-items: center;
+  gap: 26px;
+  padding: 30px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--white);
+  box-shadow: 0 24px 70px rgba(5, 25, 37, .3);
+}
+
+.share-tools-copy {
+  min-width: 0;
+}
+
+.share-tools-copy h2 {
+  overflow: hidden;
+  margin: 3px 0 9px;
+  color: var(--ink);
+  font-size: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-tools-copy > p:not(.result-kicker, .share-code-label) {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.share-tools-qr {
+  width: 190px;
+  height: 190px;
+  border: 8px solid #f4f8fa;
+  border-radius: 12px;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 27px;
+  line-height: 1;
+}
+
+.dialog-close:hover {
+  color: var(--ink);
+  background: #edf4f7;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
 }
 
 .history-toggle {
@@ -1664,6 +1911,10 @@ input:focus-visible {
     gap: 8px;
   }
 
+  .upload-mode-options {
+    grid-template-columns: 1fr;
+  }
+
   .visibility-option {
     min-height: 68px;
     padding: 12px;
@@ -1726,6 +1977,7 @@ input:focus-visible {
   .file-row-actions {
     grid-column: 2 / -1;
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .download-button {
@@ -1742,6 +1994,48 @@ input:focus-visible {
 
   .code-panel {
     padding: 18px 15px;
+  }
+
+  .share-tools-backdrop {
+    align-items: end;
+    padding: 12px 12px calc(82px + env(safe-area-inset-bottom));
+  }
+
+  .share-tools-dialog {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    max-height: calc(100dvh - 110px - env(safe-area-inset-bottom));
+    padding: 26px 20px 20px;
+    border-radius: 18px 18px 12px 12px;
+  }
+
+  .share-tools-copy h2 {
+    padding-right: 28px;
+    font-size: 21px;
+  }
+
+  .share-tools-qr {
+    width: min(190px, 64vw);
+    height: auto;
+    justify-self: center;
+  }
+
+  .batch-result-list article {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .batch-result-list article .share-tools-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .picker-actions {
+    width: 100%;
+  }
+
+  .picker-actions .choose-button,
+  .picker-actions .folder-button {
+    flex: 1 1 150px;
   }
 
   .page-footer {

@@ -5,6 +5,9 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "android:add": "cap add android",
+    "android:sync": "pnpm build && cap sync android",
+    "android:open": "cap open android",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
@@ -17,6 +20,8 @@
     "@angular/forms": "^22.2.0",
     "@angular/platform-browser": "^22.2.0",
     "@angular/router": "^22.2.0",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "qrcode": "^1.5.4",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
@@ -25,6 +30,7 @@
     "@angular/build": "^22.2.1",
     "@angular/cli": "^22.2.1",
     "@angular/compiler-cli": "^22.2.0",
+    "@capacitor/cli": "^8.5.2",
     "@types/qrcode": "^1.5.6",
     "prettier": "^3.8.1",
     "typescript": "~6.0.2"

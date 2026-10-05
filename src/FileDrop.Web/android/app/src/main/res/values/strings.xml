@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FileDrop</string>
+    <string name="title_activity_main">FileDrop</string>
+    <string name="package_name">hu.tolnaioli.filedrop</string>
+    <string name="custom_url_scheme">hu.tolnaioli.filedrop</string>
+</resources>
