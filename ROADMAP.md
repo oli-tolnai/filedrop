@@ -41,11 +41,14 @@ Két azonos módon védett felhasználási eset tartozik ide:
 - elküldöd a meghívót valakinek, aki ezen keresztül fájlt vagy képeket küld neked anélkül, hogy FileDrop-fiókot vagy Tailscale-hozzáférést kapna.
 
 - Meghívót csak bejelentkezett családtag hozhat létre LAN-ról vagy Tailscale-ről.
-- Létrehozáskor megadható a lejárat, a maximális összméret, valamint hogy egy fájl vagy több fájl tölthető-e fel. Több fájl egyetlen beérkező csomagként tartozik a meghívóhoz.
+- Meghívót minden bejelentkezett felhasználó létrehozhat; ehhez nem szükséges adminisztrátori jogosultság. A meghívó és a beérkező fájl a létrehozó fiókjához tartozik.
+- Létrehozáskor külön megadható a meghívó rövid élettartama, a maximális összméret, valamint hogy egy fájl vagy több fájl tölthető-e fel. Több fájl egyetlen beérkező csomagként tartozik a meghívóhoz.
+- A létrehozó előre kiválasztja a beérkező megosztás láthatóságát: **közös** esetben minden belépett családtag listában látja és letöltheti; **privát** esetben csak a létrehozó látja a saját listájában, más pedig csak a kód vagy link birtokában töltheti le.
+- A létrehozó azt is előre megadja, hogy a sikeres feltöltés után meddig éljen a megosztás: első letöltésig, 15 percig, 1 óráig, 24 óráig, 7 napig vagy kézi törlésig.
 - A meghívónak adhatsz címet, hogy később tudd, kitől és mit vársz. A feltöltő opcionálisan megadhatja a nevét és egy rövid megjegyzést, de fiókot nem hozhat létre.
 - A cím rövid, de interneten nem lehet hat karakteres: legalább 10 véletlen, könnyen gépelhető karaktert használunk, például `drop.tolnaioli.hu/u/7KDM-4QPX-9R`.
-- A meghívó legfeljebb 10–15 percig él, az első sikeres feltöltés után azonnal érvénytelenné válik, és kézzel is visszavonható.
-- A sikeres feltöltés bekerül a meghívót létrehozó felhasználó beérkezett fájljai közé; más családtag csak akkor látja, ha a tulajdonos később közössé teszi.
+- A meghívó legfeljebb a létrehozáskor választott rövid ideig él, az első sikeres feltöltés után azonnal érvénytelenné válik, és kézzel is visszavonható.
+- A sikeres feltöltés normál FileDrop-megosztássá válik: kap hatkarakteres letöltési kódot, linket és QR-kódot, megjelenik a létrehozó saját megosztásai között, és a kiválasztott láthatóságot és feltöltés utáni lejáratot használja.
 - A nyilvános oldalon nincs fájllista, bejelentkezés, letöltés, adminfelület vagy általános feltöltés; csak az adott meghívó használható.
 - Cloudflare Tunnel kizárólag ezt a szűk nyilvános végpontot teszi elérhetővé. A fő FileDrop felület LAN/Tailscale mögött marad.
 - Szükséges sebesség- és próbálkozáskorlát, tárhelyellenőrzés, fájlnév-tisztítás, naplózás és a sikertelen feltöltések automatikus takarítása.
