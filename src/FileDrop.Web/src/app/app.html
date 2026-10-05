@@ -97,7 +97,8 @@
         </div>
 
         <input #filePicker class="visually-hidden" type="file" multiple aria-label="Feltöltendő fájlok kiválasztása" (change)="selectFile($event, true)" />
-        <input #folderPicker class="visually-hidden" type="file" multiple webkitdirectory aria-label="Feltöltendő mappa kiválasztása" (change)="selectFile($event)" />
+        <input #replaceFilePicker class="visually-hidden" type="file" multiple aria-label="Fájlok lecserélése" (change)="selectFile($event)" />
+        <input #folderPicker class="visually-hidden" type="file" multiple webkitdirectory aria-label="Feltöltendő mappa kiválasztása" (change)="selectFile($event, true)" />
         <div class="drop-zone" [class.has-file]="selectedItemCount() > 0" (dragover)="keepFileHere($event)" (drop)="dropFile($event)">
           @if (nativeSharedFiles().length > 0) {
             <span class="file-preview-icon" aria-hidden="true">
@@ -109,7 +110,7 @@
               @for (file of nativeSharedFiles().slice(0, 5); track file.id) { <span>{{ file.name }}</span> }
               @if (nativeSharedFiles().length > 5) { <span>és még {{ nativeSharedFiles().length - 5 }} fájl…</span> }
             </div>
-            <div class="picker-actions"><button type="button" class="text-button" (click)="filePicker.click()">Fájl hozzáadása</button></div>
+            <div class="picker-actions"><button type="button" class="text-button" (click)="replaceFilePicker.click()">Fájlok lecserélése</button><button type="button" class="text-button" (click)="filePicker.click()">Fájl hozzáadása</button></div>
           } @else {
           @if (selectedFiles(); as files) {
           @if (files.length) {
@@ -119,12 +120,12 @@
             <strong class="chosen-name">{{ files.length === 1 ? files[0].name : files.length + ' fájl kiválasztva' }}</strong>
             <span class="chosen-size">Összesen {{ formatSize(selectedTotalBytes()) }}</span>
             <div class="chosen-file-list">
-              @for (file of files.slice(0, 5); track file.name + file.size + $index) {
-                <span>{{ file.webkitRelativePath || file.name }}</span>
+              @for (file of files; track file.name + file.size + $index) {
+                <span class="selected-file-entry"><span>{{ file.webkitRelativePath || file.name }}</span><button type="button" class="remove-file-button" (click)="removeSelectedFile($index); $event.stopPropagation()" [attr.aria-label]="file.name + ' eltávolítása'" title="Fájl eltávolítása">×</button></span>
               }
               @if (files.length > 5) { <span>és még {{ files.length - 5 }} fájl…</span> }
             </div>
-            <div class="picker-actions"><button type="button" class="text-button" (click)="filePicker.click()">Fájl hozzáadása</button><button type="button" class="text-button" (click)="folderPicker.click()">Másik mappa</button></div>
+            <div class="picker-actions"><button type="button" class="text-button" (click)="replaceFilePicker.click()">Fájlok lecserélése</button><button type="button" class="text-button" (click)="filePicker.click()">Fájl hozzáadása</button><button type="button" class="text-button" (click)="folderPicker.click()">Mappa hozzáadása</button></div>
           } @else {
             <span class="drop-icon" aria-hidden="true">
               <svg viewBox="0 0 32 32" fill="none"><path d="M16 21V5m0 0-5.5 5.5M16 5l5.5 5.5M7 19v5.25C7 25.77 8.23 27 9.75 27h12.5C23.77 27 25 25.77 25 24.25V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>

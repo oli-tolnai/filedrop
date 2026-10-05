@@ -1008,6 +1008,37 @@ h1 {
   white-space: nowrap;
 }
 
+.selected-file-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selected-file-entry > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.remove-file-button {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  border: 1px solid #c5d6dd;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 18px;
+}
+
+.remove-file-button:hover {
+  border-color: #c56c6c;
+  color: #9e3131;
+  background: #fff5f5;
+}
+
 .batch-hint {
   align-self: stretch;
   margin: 0;

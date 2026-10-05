@@ -275,6 +275,11 @@ export class App implements OnInit, OnDestroy {
     event.preventDefault();
   }
 
+  protected removeSelectedFile(index: number): void {
+    const files = this.selectedFiles().filter((_, fileIndex) => fileIndex !== index);
+    this.setSelectedFiles(files);
+  }
+
   protected setVisibility(value: Visibility): void {
     this.visibility.set(value);
     this.createdShare.set(null);
