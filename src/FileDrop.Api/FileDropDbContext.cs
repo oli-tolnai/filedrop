@@ -17,8 +17,11 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
         share.Property(item => item.Note).HasMaxLength(1000);
         share.Property(item => item.Visibility).HasMaxLength(20);
         share.Property(item => item.AccessCode).HasMaxLength(6);
+        share.Property(item => item.RelativePath).HasMaxLength(1000);
+        share.Property(item => item.BatchAccessTokenHash).HasMaxLength(64);
         share.HasIndex(item => item.AccessCode).IsUnique();
         share.HasIndex(item => item.ExpiresAtUtc);
+        share.HasIndex(item => item.ParentShareId);
 
         var user = modelBuilder.Entity<AppUser>();
         user.HasKey(item => item.Id);
@@ -36,6 +39,7 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
         session.HasOne<AppUser>().WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Cascade);
 
         share.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
+        share.HasOne(item => item.ParentShare).WithMany(item => item.CollectionFiles).HasForeignKey(item => item.ParentShareId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -58,6 +62,13 @@ public sealed class SharedFile
     public int DownloadCount { get; set; }
     public Guid? OwnerUserId { get; set; }
     public AppUser? Owner { get; set; }
+    public bool IsCollection { get; set; }
+    public Guid? ParentShareId { get; set; }
+    public SharedFile? ParentShare { get; set; }
+    public List<SharedFile> CollectionFiles { get; } = [];
+    public string? RelativePath { get; set; }
+    public string? BatchAccessTokenHash { get; set; }
+    public DateTime? BatchAccessExpiresAtUtc { get; set; }
 }
 
 public sealed class AppUser

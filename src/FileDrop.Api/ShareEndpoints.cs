@@ -14,7 +14,24 @@ public static class ShareEndpoints
     {
         endpoints.MapGet("/api/shares", ListSharedFilesAsync);
         endpoints.MapPost("/api/shares", CreateShareAsync);
-        endpoints.MapPost("/api/shares/bundle", CreateBundleAsync);
+        endpoints.MapPost("/api/collections", CreateCollectionAsync);
+        // Régi kliensverziók ezt a címet használják több fájlhoz. Az adatokat
+        // már ezeknél sem ZIP-be, hanem külön fájlként tároljuk.
+        endpoints.MapPost("/api/shares/bundle", CreateCollectionAsync);
+        endpoints.MapGet("/api/collections/{id:guid}", OpenCollectionAsync);
+        endpoints.MapGet("/api/collections/code/{code}", OpenCollectionByCodeAsync)
+            .RequireRateLimiting("share-code");
+        endpoints.MapPost("/api/collections/{id:guid}/begin-download", BeginCollectionDownloadAsync);
+        endpoints.MapPost("/api/collections/code/{code}/begin-download", BeginCollectionDownloadByCodeAsync)
+            .RequireRateLimiting("share-code");
+        endpoints.MapGet("/api/collections/{id:guid}/zip", DownloadCollectionZipAsync);
+        endpoints.MapGet("/api/collections/code/{code}/zip", DownloadCollectionZipByCodeAsync)
+            .RequireRateLimiting("share-code");
+        endpoints.MapGet("/api/collection-downloads/{id:guid}/files/{fileId:guid}", DownloadCollectionFileByTicketAsync);
+        endpoints.MapGet("/api/collections/{id:guid}/files/{fileId:guid}/download", DownloadCollectionFileAsync);
+        // Egy érvényes kódhoz akár sok fénykép is tartozhat; a kód feloldását és
+        // a letöltési csomag indítását már sebességkorlátozás védi.
+        endpoints.MapGet("/api/collections/code/{code}/files/{fileId:guid}/download", DownloadCollectionFileByCodeAsync);
         endpoints.MapPost("/api/shares/resolve-code", ResolveCodeAsync)
             .RequireRateLimiting("share-code");
         endpoints.MapGet("/api/shares/code/{code}/download", DownloadByCodeAsync)
@@ -25,12 +42,13 @@ public static class ShareEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> CreateBundleAsync(
+    private static async Task<IResult> CreateCollectionAsync(
         HttpRequest request,
         string visibility,
         string expiration,
         string? title,
         string? note,
+        string? collectionName,
         string? bundleName,
         FileDropDbContext db,
         StorageCapacityService storage,
@@ -55,19 +73,24 @@ public static class ShareEndpoints
         if (!string.IsNullOrWhiteSpace(note) && safeNote is null)
             return Results.BadRequest(new ApiError("A megjegyzés legfeljebb 1000 karakter lehet."));
 
-        var safeBundleName = SanitizeFileName(bundleName ?? "filedrop-csomag.zip");
-        if (safeBundleName is null)
-            return Results.BadRequest(new ApiError("Érvénytelen csomagnév."));
-        if (!safeBundleName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) safeBundleName += ".zip";
+        var requestedCollectionName = collectionName ?? bundleName ?? "filedrop-gyujtemeny";
+        var safeCollectionName = SanitizeFileName(requestedCollectionName);
+        if (safeCollectionName is null)
+            return Results.BadRequest(new ApiError("Érvénytelen gyűjteménynév."));
+        if (safeCollectionName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            safeCollectionName = Path.GetFileNameWithoutExtension(safeCollectionName);
+            if (string.IsNullOrWhiteSpace(safeCollectionName)) safeCollectionName = "filedrop-gyujtemeny";
+        }
 
         if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType)
             || !mediaType.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(mediaType.Boundary.Value))
-            return Results.BadRequest(new ApiError("A csomag feltöltéséhez multipart/form-data kérés szükséges."));
+            return Results.BadRequest(new ApiError("A gyűjtemény feltöltéséhez multipart/form-data kérés szükséges."));
 
         var contentLength = request.ContentLength;
         if (contentLength is null) return Results.StatusCode(StatusCodes.Status411LengthRequired);
-        if (contentLength <= 0) return Results.BadRequest(new ApiError("Üres csomag nem tölthető fel."));
+        if (contentLength <= 0) return Results.BadRequest(new ApiError("Üres gyűjtemény nem tölthető fel."));
 
         using var reservation = reservations.TryReserve(contentLength.Value, storage.GetUploadCapacityBytes());
         if (reservation is null)
@@ -75,80 +98,124 @@ public static class ShareEndpoints
 
         Directory.CreateDirectory(storage.StoragePath);
         Directory.CreateDirectory(storage.TemporaryPath);
-        var id = Guid.NewGuid();
-        var storedFileName = $"{id:N}.zip";
-        var temporaryFilePath = Path.Combine(storage.TemporaryPath, $"{id:N}.uploading");
-        var finalFilePath = Path.Combine(storage.StoragePath, storedFileName);
+        var collectionId = Guid.NewGuid();
+        var uploadedFiles = new List<CollectionUpload>();
 
         try
         {
             var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value!;
             var reader = new MultipartReader(boundary, request.Body);
-            var entryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var fileCount = 0;
-
-            await using (var output = new FileStream(temporaryFilePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            var relativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            MultipartSection? section;
+            while ((section = await reader.ReadNextSectionAsync(cancellationToken)) is not null)
             {
-                using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+                if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition)
+                    || !disposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase)
+                    || (string.IsNullOrWhiteSpace(disposition.FileName.Value) && string.IsNullOrWhiteSpace(disposition.FileNameStar.Value)))
+                    continue;
+
+                var fieldName = HeaderUtilities.RemoveQuotes(disposition.Name).Value ?? "";
+                var suppliedPath = fieldName.StartsWith("file:", StringComparison.Ordinal)
+                    ? Uri.UnescapeDataString(fieldName[5..])
+                    : HeaderUtilities.RemoveQuotes(disposition.FileNameStar).Value
+                        ?? HeaderUtilities.RemoveQuotes(disposition.FileName).Value
+                        ?? "fajl";
+                var safeRelativePath = MakeSafeZipEntryName(suppliedPath, relativePaths);
+                if (safeRelativePath is null)
+                    return Results.BadRequest(new ApiError("A gyűjtemény egyik fájlneve vagy mappaútvonala érvénytelen."));
+
+                var id = Guid.NewGuid();
+                var storedFileName = $"{id:N}.bin";
+                var temporaryFilePath = Path.Combine(storage.TemporaryPath, $"{id:N}.uploading");
+                var finalFilePath = Path.Combine(storage.StoragePath, storedFileName);
+                long sizeBytes = 0;
+
+                await using (var output = new FileStream(temporaryFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
                 {
-                    MultipartSection? section;
-                    while ((section = await reader.ReadNextSectionAsync(cancellationToken)) is not null)
+                    var buffer = new byte[1024 * 1024];
+                    int read;
+                    while ((read = await section.Body.ReadAsync(buffer, cancellationToken)) > 0)
                     {
-                        if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition)
-                            || !disposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase)
-                            || (string.IsNullOrWhiteSpace(disposition.FileName.Value) && string.IsNullOrWhiteSpace(disposition.FileNameStar.Value)))
-                            continue;
-
-                        var fieldName = HeaderUtilities.RemoveQuotes(disposition.Name).Value ?? "";
-                        var suppliedPath = fieldName.StartsWith("file:", StringComparison.Ordinal)
-                            ? Uri.UnescapeDataString(fieldName[5..])
-                            : HeaderUtilities.RemoveQuotes(disposition.FileNameStar).Value
-                                ?? HeaderUtilities.RemoveQuotes(disposition.FileName).Value
-                                ?? "fajl";
-                        var safeEntryName = MakeSafeZipEntryName(suppliedPath, entryNames);
-                        if (safeEntryName is null)
-                            return Results.BadRequest(new ApiError("A csomag egyik fájlneve vagy mappaútvonala érvénytelen."));
-
-                        var entry = archive.CreateEntry(safeEntryName, CompressionLevel.NoCompression);
-                        await using var entryStream = entry.Open();
-                        await section.Body.CopyToAsync(entryStream, 1024 * 1024, cancellationToken);
-                        fileCount++;
+                        sizeBytes += read;
+                        await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                        reservation.ReportWritten(read);
                     }
+                    await output.FlushAsync(cancellationToken);
                 }
-                await output.FlushAsync(cancellationToken);
+
+                if (sizeBytes <= 0)
+                {
+                    SafeDelete(temporaryFilePath);
+                    return Results.BadRequest(new ApiError("Üres fájl nem lehet a gyűjteményben."));
+                }
+
+                var safeFileName = SanitizeFileName(Path.GetFileName(safeRelativePath));
+                if (safeFileName is null)
+                {
+                    SafeDelete(temporaryFilePath);
+                    return Results.BadRequest(new ApiError("A gyűjtemény egyik fájlneve érvénytelen."));
+                }
+
+                uploadedFiles.Add(new CollectionUpload(
+                    id,
+                    safeFileName,
+                    safeRelativePath,
+                    storedFileName,
+                    temporaryFilePath,
+                    finalFilePath,
+                    SanitizeContentType(section.ContentType),
+                    sizeBytes));
             }
 
-            if (fileCount == 0)
-                return Results.BadRequest(new ApiError("A csomag nem tartalmaz fájlt."));
+            if (uploadedFiles.Count < 2)
+                return Results.BadRequest(new ApiError("A gyűjteményhez legalább két fájl szükséges."));
 
-            var sizeBytes = new FileInfo(temporaryFilePath).Length;
-            File.Move(temporaryFilePath, finalFilePath);
-            var share = new SharedFile
+            foreach (var uploadedFile in uploadedFiles)
             {
-                Id = id,
-                OriginalFileName = safeBundleName,
+                File.Move(uploadedFile.TemporaryFilePath, uploadedFile.FinalFilePath);
+            }
+
+            var collection = new SharedFile
+            {
+                Id = collectionId,
+                OriginalFileName = safeCollectionName,
                 Title = safeTitle,
                 Note = safeNote,
-                StoredFileName = storedFileName,
-                ContentType = "application/zip",
-                SizeBytes = sizeBytes,
+                StoredFileName = "collection",
+                ContentType = "application/x-filedrop-collection",
+                SizeBytes = uploadedFiles.Sum(file => file.SizeBytes),
                 Visibility = visibility,
                 CreatedAtUtc = DateTime.UtcNow,
                 ExpiresAtUtc = expiresAtUtc,
                 DeleteAfterFirstDownload = deleteAfterFirstDownload,
                 OwnerUserId = owner.Id,
+                IsCollection = true,
             };
+            var children = uploadedFiles.Select(file => new SharedFile
+            {
+                Id = file.Id,
+                OriginalFileName = file.FileName,
+                StoredFileName = file.StoredFileName,
+                ContentType = file.ContentType,
+                SizeBytes = file.SizeBytes,
+                Visibility = "internal",
+                CreatedAtUtc = collection.CreatedAtUtc,
+                OwnerUserId = owner.Id,
+                ParentShareId = collection.Id,
+                RelativePath = file.RelativePath,
+            }).ToList();
+            collection.CollectionFiles.AddRange(children);
 
             await AccessCodeGate.WaitAsync(cancellationToken);
             try
             {
-                share.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
-                db.SharedFiles.Add(share);
+                collection.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
+                db.SharedFiles.Add(collection);
                 await db.SaveChangesAsync(cancellationToken);
             }
             finally { AccessCodeGate.Release(); }
 
-            return Results.Created($"/api/shares/{share.Id}/download", ToDto(share));
+            return Results.Created($"/api/collections/{collection.Id}", ToDto(collection));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -156,11 +223,20 @@ public static class ShareEndpoints
         }
         catch
         {
-            SafeDelete(temporaryFilePath);
-            SafeDelete(finalFilePath);
+            foreach (var uploadedFile in uploadedFiles)
+            {
+                SafeDelete(uploadedFile.TemporaryFilePath);
+                SafeDelete(uploadedFile.FinalFilePath);
+            }
             throw;
         }
-        finally { SafeDelete(temporaryFilePath); }
+        finally
+        {
+            foreach (var uploadedFile in uploadedFiles)
+            {
+                SafeDelete(uploadedFile.TemporaryFilePath);
+            }
+        }
     }
 
     private static async Task<IResult> ListSharedFilesAsync(
@@ -178,7 +254,9 @@ public static class ShareEndpoints
         var now = DateTime.UtcNow;
         var files = await db.SharedFiles
             .Include(file => file.Owner)
-            .Where(file => file.Visibility == "shared"
+            .Include(file => file.CollectionFiles)
+            .Where(file => file.ParentShareId == null
+                && file.Visibility == "shared"
                 && file.FileDeletedAtUtc == null
                 && file.ConsumedAtUtc == null
                 && (file.ExpiresAtUtc == null || file.ExpiresAtUtc > now))
@@ -365,15 +443,297 @@ public static class ShareEndpoints
         var now = DateTime.UtcNow;
         var share = await db.SharedFiles
             .Include(file => file.Owner)
+            .Include(file => file.CollectionFiles)
             .AsNoTracking()
-            .FirstOrDefaultAsync(file => file.AccessCode == code
+            .FirstOrDefaultAsync(file => file.ParentShareId == null
+                && file.AccessCode == code
                 && file.FileDeletedAtUtc == null
                 && file.ConsumedAtUtc == null
                 && (file.ExpiresAtUtc == null || file.ExpiresAtUtc > now), cancellationToken);
 
-        return share is null
-            ? Results.NotFound(new ApiError("Nincs aktív megosztás ezzel a kóddal."))
-            : Results.Ok(ToDto(share, codeDownload: true));
+        if (share is null) return Results.NotFound(new ApiError("Nincs aktív megosztás ezzel a kóddal."));
+        return Results.Ok(ToDto(share, codeDownload: true));
+    }
+
+    private static async Task<IResult> OpenCollectionAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionAsync(id, db, cancellationToken);
+        if (collection is null) return Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."));
+        if (await sessions.GetCurrentAsync(context, db, cancellationToken) is null) return Results.Unauthorized();
+        return Results.Ok(ToCollectionDetailsDto(collection));
+    }
+
+    private static async Task<IResult> OpenCollectionByCodeAsync(
+        string code,
+        FileDropDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionByCodeAsync(code, db, cancellationToken);
+        return collection is null
+            ? Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."))
+            : Results.Ok(ToCollectionDetailsDto(collection, codeAccess: true));
+    }
+
+    private static async Task<IResult> BeginCollectionDownloadAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionAsync(id, db, cancellationToken);
+        if (collection is null) return Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."));
+        if (await sessions.GetCurrentAsync(context, db, cancellationToken) is null) return Results.Unauthorized();
+        return await BeginCollectionDownloadCoreAsync(collection, db, cancellationToken);
+    }
+
+    private static async Task<IResult> BeginCollectionDownloadByCodeAsync(
+        string code,
+        FileDropDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionByCodeAsync(code, db, cancellationToken);
+        return collection is null
+            ? Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."))
+            : await BeginCollectionDownloadCoreAsync(collection, db, cancellationToken, codeAccess: true);
+    }
+
+    private static async Task<IResult> BeginCollectionDownloadCoreAsync(
+        SharedFile collection,
+        FileDropDbContext db,
+        CancellationToken cancellationToken,
+        bool codeAccess = false)
+    {
+        var files = GetActiveCollectionFiles(collection);
+        if (files.Count == 0) return Results.NotFound(new ApiError("A fájlcsoportban már nincs letölthető fájl."));
+
+        collection.DownloadCount++;
+        string? ticket = null;
+        if (collection.DeleteAfterFirstDownload)
+        {
+            ticket = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+            collection.ConsumedAtUtc = DateTime.UtcNow;
+            collection.AccessCode = null;
+            collection.BatchAccessTokenHash = HashTicket(ticket);
+            collection.BatchAccessExpiresAtUtc = DateTime.UtcNow.AddMinutes(30);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var fileDtos = files.Select(file => ToCollectionFileDto(file, collection, codeAccess, ticket)).ToList();
+        return Results.Ok(new CollectionDownloadDto(fileDtos));
+    }
+
+    private static async Task<IResult> DownloadCollectionZipAsync(
+        Guid id,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        StorageCapacityService storage,
+        IServiceScopeFactory scopeFactory,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionAsync(id, db, cancellationToken);
+        if (collection is null) return Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."));
+        if (await sessions.GetCurrentAsync(context, db, cancellationToken) is null) return Results.Unauthorized();
+        return await CreateCollectionZipResultAsync(collection, db, storage, scopeFactory, cancellationToken);
+    }
+
+    private static async Task<IResult> DownloadCollectionZipByCodeAsync(
+        string code,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        IServiceScopeFactory scopeFactory,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionByCodeAsync(code, db, cancellationToken);
+        return collection is null
+            ? Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."))
+            : await CreateCollectionZipResultAsync(collection, db, storage, scopeFactory, cancellationToken);
+    }
+
+    private static async Task<IResult> CreateCollectionZipResultAsync(
+        SharedFile collection,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        IServiceScopeFactory scopeFactory,
+        CancellationToken cancellationToken)
+    {
+        var files = GetActiveCollectionFiles(collection);
+        if (files.Count == 0) return Results.NotFound(new ApiError("A fájlcsoportban már nincs letölthető fájl."));
+
+        var archiveItems = new List<CollectionArchiveItem>(files.Count);
+        foreach (var file in files)
+        {
+            var path = Path.Combine(storage.StoragePath, file.StoredFileName);
+            if (!File.Exists(path)) return Results.NotFound(new ApiError("A fájlcsoport egyik fájlja már nem található a tárhelyen."));
+            archiveItems.Add(new CollectionArchiveItem(path, file.RelativePath ?? file.OriginalFileName));
+        }
+
+        collection.DownloadCount++;
+        if (collection.DeleteAfterFirstDownload)
+        {
+            collection.ConsumedAtUtc = DateTime.UtcNow;
+            collection.AccessCode = null;
+            // Az időablak megakadályozza, hogy az időzített takarítás a ZIP írása közben törölje a fájlokat.
+            collection.BatchAccessExpiresAtUtc = DateTime.UtcNow.AddMinutes(30);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var archiveName = collection.OriginalFileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            ? collection.OriginalFileName
+            : $"{collection.OriginalFileName}.zip";
+        return new CollectionZipResult(
+            collection.Id,
+            archiveName,
+            archiveItems,
+            collection.DeleteAfterFirstDownload,
+            scopeFactory,
+            storage);
+    }
+
+    private static async Task<IResult> DownloadCollectionFileAsync(
+        Guid id,
+        Guid fileId,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        StorageCapacityService storage,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionAsync(id, db, cancellationToken);
+        if (collection is null) return Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."));
+        if (await sessions.GetCurrentAsync(context, db, cancellationToken) is null) return Results.Unauthorized();
+        if (collection.DeleteAfterFirstDownload)
+            return Results.BadRequest(new ApiError("Az egyszeri letöltéshez az „Összes fájl” gombot használd."));
+        return DownloadCollectionChild(collection, fileId, storage);
+    }
+
+    private static async Task<IResult> DownloadCollectionFileByCodeAsync(
+        string code,
+        Guid fileId,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActiveCollectionByCodeAsync(code, db, cancellationToken);
+        if (collection is null) return Results.NotFound(new ApiError("A fájlcsoport nem található vagy már lejárt."));
+        if (collection.DeleteAfterFirstDownload)
+            return Results.BadRequest(new ApiError("Az egyszeri letöltéshez az „Összes fájl” gombot használd."));
+        return DownloadCollectionChild(collection, fileId, storage);
+    }
+
+    private static async Task<IResult> DownloadCollectionFileByTicketAsync(
+        Guid id,
+        Guid fileId,
+        string? ticket,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ticket)) return Results.NotFound(new ApiError("A letöltési munkamenet nem található."));
+        var collection = await db.SharedFiles
+            .Include(file => file.CollectionFiles)
+            .FirstOrDefaultAsync(file => file.Id == id && file.IsCollection && file.ParentShareId == null, cancellationToken);
+        if (collection is null
+            || collection.BatchAccessExpiresAtUtc is null
+            || collection.BatchAccessExpiresAtUtc <= DateTime.UtcNow
+            || !HasValidTicket(collection, ticket))
+        {
+            return Results.NotFound(new ApiError("A letöltési munkamenet lejárt vagy nem található."));
+        }
+
+        return DownloadCollectionChild(collection, fileId, storage);
+    }
+
+    private static IResult DownloadCollectionChild(SharedFile collection, Guid fileId, StorageCapacityService storage)
+    {
+        var file = GetActiveCollectionFiles(collection).FirstOrDefault(item => item.Id == fileId);
+        if (file is null) return Results.NotFound(new ApiError("A fájl nem található."));
+        var filePath = Path.Combine(storage.StoragePath, file.StoredFileName);
+        if (!File.Exists(filePath)) return Results.NotFound(new ApiError("A fájl már nincs a tárhelyen."));
+        return Results.File(filePath, file.ContentType, file.OriginalFileName, enableRangeProcessing: true);
+    }
+
+    private static async Task<SharedFile?> LoadActiveCollectionAsync(Guid id, FileDropDbContext db, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        return await db.SharedFiles
+            .Include(file => file.Owner)
+            .Include(file => file.CollectionFiles)
+            .FirstOrDefaultAsync(file => file.Id == id
+                && file.IsCollection
+                && file.ParentShareId == null
+                && file.FileDeletedAtUtc == null
+                && file.ConsumedAtUtc == null
+                && (file.ExpiresAtUtc == null || file.ExpiresAtUtc > now), cancellationToken);
+    }
+
+    private static async Task<SharedFile?> LoadActiveCollectionByCodeAsync(string code, FileDropDbContext db, CancellationToken cancellationToken)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        if ((normalized.Length != 4 && normalized.Length != 6) || normalized.Any(character => !char.IsAsciiLetterOrDigit(character))) return null;
+        var now = DateTime.UtcNow;
+        return await db.SharedFiles
+            .Include(file => file.Owner)
+            .Include(file => file.CollectionFiles)
+            .FirstOrDefaultAsync(file => file.IsCollection
+                && file.ParentShareId == null
+                && file.AccessCode == normalized
+                && file.FileDeletedAtUtc == null
+                && file.ConsumedAtUtc == null
+                && (file.ExpiresAtUtc == null || file.ExpiresAtUtc > now), cancellationToken);
+    }
+
+    private static IReadOnlyList<SharedFile> GetActiveCollectionFiles(SharedFile collection) => collection.CollectionFiles
+        .Where(file => file.FileDeletedAtUtc == null)
+        .OrderBy(file => file.RelativePath ?? file.OriginalFileName, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    private static CollectionDetailsDto ToCollectionDetailsDto(SharedFile collection, bool codeAccess = false)
+    {
+        var files = GetActiveCollectionFiles(collection)
+            .Select(file => ToCollectionFileDto(file, collection, codeAccess))
+            .ToList();
+        var prefix = codeAccess && collection.AccessCode is not null
+            ? $"/api/collections/code/{collection.AccessCode}"
+            : $"/api/collections/{collection.Id}";
+        return new CollectionDetailsDto(
+            ToDto(collection, codeDownload: codeAccess),
+            files,
+            $"{prefix}/zip",
+            $"{prefix}/begin-download");
+    }
+
+    private static CollectionFileDto ToCollectionFileDto(SharedFile file, SharedFile collection, bool codeAccess, string? ticket = null)
+    {
+        var downloadUrl = ticket is not null
+            ? $"/api/collection-downloads/{collection.Id}/files/{file.Id}?ticket={Uri.EscapeDataString(ticket)}"
+            : codeAccess && collection.AccessCode is not null
+                ? $"/api/collections/code/{collection.AccessCode}/files/{file.Id}/download"
+                : $"/api/collections/{collection.Id}/files/{file.Id}/download";
+        return new CollectionFileDto(file.Id, file.OriginalFileName, file.RelativePath, file.SizeBytes, downloadUrl);
+    }
+
+    private static string HashTicket(string ticket) => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ticket)));
+
+    private static bool HasValidTicket(SharedFile collection, string ticket)
+    {
+        if (collection.BatchAccessTokenHash is not { Length: 64 } expected) return false;
+        try
+        {
+            return CryptographicOperations.FixedTimeEquals(
+                Convert.FromHexString(expected),
+                Convert.FromHexString(HashTicket(ticket)));
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     private static async Task<IResult> DownloadAsync(
@@ -396,6 +756,11 @@ public static class ShareEndpoints
             || (share.ExpiresAtUtc is not null && share.ExpiresAtUtc <= now))
         {
             return Results.NotFound(new ApiError("A fájl nem található vagy már lejárt."));
+        }
+
+        if (share.IsCollection || share.ParentShareId is not null)
+        {
+            return Results.BadRequest(new ApiError("Ezt a fájlcsoportot előbb meg kell nyitni."));
         }
 
         if (share.Visibility == "shared"
@@ -461,14 +826,19 @@ public static class ShareEndpoints
             return Results.NotFound(new ApiError("A megosztás nem található."));
         }
 
-        var shareExists = await db.SharedFiles.AnyAsync(file => file.AccessCode == normalized
+        var shareExists = await db.SharedFiles.AnyAsync(file => file.ParentShareId == null
+            && file.AccessCode == normalized
             && file.FileDeletedAtUtc == null
             && file.ConsumedAtUtc == null
             && (file.ExpiresAtUtc == null || file.ExpiresAtUtc > DateTime.UtcNow), cancellationToken);
         if (!shareExists) return Results.NotFound(new ApiError("A megosztás nem található vagy már lejárt."));
 
         var share = await db.SharedFiles.AsNoTracking()
-            .FirstAsync(file => file.AccessCode == normalized, cancellationToken);
+            .FirstAsync(file => file.ParentShareId == null && file.AccessCode == normalized, cancellationToken);
+        if (share.IsCollection)
+        {
+            return Results.Redirect($"/api/collections/code/{normalized}");
+        }
         return await DownloadAsync(share.Id, context, db, sessions, storage, scopeFactory, cancellationToken, allowAnonymousCode: true);
     }
 
@@ -486,8 +856,14 @@ public static class ShareEndpoints
         file.DeleteAfterFirstDownload,
         file.DownloadCount,
         codeDownload && file.AccessCode is not null
-            ? $"/api/shares/code/{file.AccessCode}/download"
-            : $"/api/shares/{file.Id}/download");
+            ? file.IsCollection
+                ? $"/api/collections/code/{file.AccessCode}"
+                : $"/api/shares/code/{file.AccessCode}/download"
+            : file.IsCollection
+                ? $"/api/collections/{file.Id}"
+                : $"/api/shares/{file.Id}/download",
+        file.IsCollection,
+        file.IsCollection ? file.CollectionFiles.Count : 1);
 
     private static async Task<IResult> ListMySharesAsync(
         HttpContext context,
@@ -500,7 +876,8 @@ public static class ShareEndpoints
 
         var files = await db.SharedFiles
             .Include(file => file.Owner)
-            .Where(file => file.OwnerUserId == account.Id)
+            .Include(file => file.CollectionFiles)
+            .Where(file => file.OwnerUserId == account.Id && file.ParentShareId == null)
             .OrderByDescending(file => file.CreatedAtUtc)
             .Take(250)
             .ToListAsync(cancellationToken);
@@ -527,10 +904,28 @@ public static class ShareEndpoints
 
         var share = await db.SharedFiles.FirstOrDefaultAsync(file => file.Id == id, cancellationToken);
         if (share is null) return Results.NotFound();
+        if (share.ParentShareId is not null) return Results.NotFound();
         if (share.OwnerUserId != account.Id && !account.IsAdmin) return Results.Forbid();
 
-        SafeDelete(Path.Combine(storage.StoragePath, share.StoredFileName));
-        share.FileDeletedAtUtc = DateTime.UtcNow;
+        var deletedAtUtc = DateTime.UtcNow;
+        if (share.IsCollection)
+        {
+            var children = await db.SharedFiles
+                .Where(file => file.ParentShareId == share.Id && file.FileDeletedAtUtc == null)
+                .ToListAsync(cancellationToken);
+            foreach (var child in children)
+            {
+                SafeDelete(Path.Combine(storage.StoragePath, child.StoredFileName));
+                child.FileDeletedAtUtc = deletedAtUtc;
+            }
+            share.BatchAccessTokenHash = null;
+            share.BatchAccessExpiresAtUtc = null;
+        }
+        else
+        {
+            SafeDelete(Path.Combine(storage.StoragePath, share.StoredFileName));
+        }
+        share.FileDeletedAtUtc = deletedAtUtc;
         share.AccessCode = null;
         await db.SaveChangesAsync(cancellationToken);
         return Results.NoContent();
@@ -696,6 +1091,9 @@ public static class ShareEndpoints
 
 public sealed record ResolveCodeRequest(string? Code);
 public sealed record OwnedShareDto(ShareDto Share, string Status);
+public sealed record CollectionFileDto(Guid Id, string FileName, string? RelativePath, long SizeBytes, string DownloadUrl);
+public sealed record CollectionDetailsDto(ShareDto Collection, IReadOnlyList<CollectionFileDto> Files, string ZipDownloadUrl, string BeginDownloadUrl);
+public sealed record CollectionDownloadDto(IReadOnlyList<CollectionFileDto> Files);
 
 public sealed record ApiError(string Message);
 
@@ -712,4 +1110,16 @@ public sealed record ShareDto(
     DateTime? ExpiresAtUtc,
     bool DeleteAfterFirstDownload,
     int DownloadCount,
-    string DownloadUrl);
+    string DownloadUrl,
+    bool IsCollection,
+    int FileCount);
+
+file sealed record CollectionUpload(
+    Guid Id,
+    string FileName,
+    string RelativePath,
+    string StoredFileName,
+    string TemporaryFilePath,
+    string FinalFilePath,
+    string ContentType,
+    long SizeBytes);

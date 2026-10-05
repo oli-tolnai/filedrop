@@ -7,7 +7,7 @@ import { NativeSharedFile, ShareReceiver } from './share-receiver';
 
 type ViewName = 'download' | 'upload' | 'mine' | 'settings';
 type Visibility = 'shared' | 'code';
-type UploadMode = 'bundle' | 'separate';
+type UploadMode = 'collection' | 'separate';
 
 interface StorageStatus {
   fileDropUsedBytes: number;
@@ -37,6 +37,27 @@ interface Share {
   deleteAfterFirstDownload: boolean;
   downloadCount: number;
   downloadUrl: string;
+  isCollection: boolean;
+  fileCount: number;
+}
+
+interface CollectionFile {
+  id: string;
+  fileName: string;
+  relativePath: string | null;
+  sizeBytes: number;
+  downloadUrl: string;
+}
+
+interface CollectionDetails {
+  collection: Share;
+  files: CollectionFile[];
+  zipDownloadUrl: string;
+  beginDownloadUrl: string;
+}
+
+interface CollectionDownload {
+  files: CollectionFile[];
 }
 
 interface Account {
@@ -111,7 +132,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly filesState = signal<'loading' | 'ready' | 'unauthorized' | 'error'>('loading');
   protected readonly selectedFiles = signal<File[]>([]);
   protected readonly nativeSharedFiles = signal<NativeSharedFile[]>([]);
-  protected readonly uploadMode = signal<UploadMode>('bundle');
+  protected readonly uploadMode = signal<UploadMode>('collection');
   protected readonly shareTitle = signal('');
   protected readonly shareNote = signal('');
   protected readonly visibility = signal<Visibility>('shared');
@@ -128,6 +149,8 @@ export class App implements OnInit, OnDestroy {
   protected readonly appUpdateAvailable = signal(false);
   protected readonly shareToolsShare = signal<Share | null>(null);
   protected readonly shareToolsQrCode = signal('');
+  protected readonly openedCollection = signal<CollectionDetails | null>(null);
+  protected readonly collectionBusy = signal(false);
   protected readonly accountStatus = signal<AccountStatus | null>(null);
   protected readonly ownedShares = signal<OwnedShare[]>([]);
   protected readonly showHistory = signal(false);
@@ -175,6 +198,7 @@ export class App implements OnInit, OnDestroy {
   protected selectView(view: ViewName): void {
     this.activeView.set(view);
     this.notice.set('');
+    if (view !== 'download') this.openedCollection.set(null);
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnedShares();
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnSessions();
     if (view === 'settings' && this.accountStatus()?.account?.isAdmin) this.loadAdminUsers();
@@ -464,8 +488,8 @@ export class App implements OnInit, OnDestroy {
 
     if (nativeFiles.length) {
       void this.uploadNativeFiles(nativeFiles);
-    } else if (files.length > 1 && this.uploadMode() === 'bundle') {
-      this.uploadBundle(files);
+    } else if (files.length > 1 && this.uploadMode() === 'collection') {
+      this.uploadCollection(files);
     } else {
       this.uploadFilesSequentially(files, 0, 0, this.selectedTotalBytes());
     }
@@ -480,17 +504,17 @@ export class App implements OnInit, OnDestroy {
       note: this.shareNote(),
     };
     try {
-      if (files.length > 1 && this.uploadMode() === 'bundle') {
-        const requestedName = this.shareTitle().trim() || 'filedrop-csomag';
-        const result = await ShareReceiver.uploadBundle({
+      if (files.length > 1 && this.uploadMode() === 'collection') {
+        const collectionName = this.shareTitle().trim() || 'filedrop-gyujtemeny';
+        const result = await ShareReceiver.uploadCollection({
           ...common,
-          bundleName: requestedName.toLowerCase().endsWith('.zip') ? requestedName : `${requestedName}.zip`,
+          collectionName,
         });
         const share = JSON.parse(result.response) as Share;
         this.createdShare.set(share);
         this.createdShares.set([share]);
         void this.createQrCode(this.getShareLink(share));
-        this.notice.set(`${files.length} fájl egy ZIP-csomagban elkészült.`);
+        this.notice.set(`${files.length} fájl egy közös gyűjteményben elkészült.`);
       } else {
         let completedBytes = 0;
         for (const file of files) {
@@ -519,7 +543,7 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
-  private uploadBundle(files: File[]): void {
+  private uploadCollection(files: File[]): void {
     const form = new FormData();
     for (const file of files) {
       const path = file.webkitRelativePath || file.name;
@@ -528,15 +552,14 @@ export class App implements OnInit, OnDestroy {
 
     const firstPath = files[0]?.webkitRelativePath || '';
     const folderName = firstPath.includes('/') ? firstPath.split('/')[0] : '';
-    const requestedName = this.shareTitle().trim() || folderName || 'filedrop-csomag';
-    const bundleName = requestedName.toLowerCase().endsWith('.zip') ? requestedName : `${requestedName}.zip`;
+    const collectionName = this.shareTitle().trim() || folderName || 'filedrop-gyujtemeny';
     const parameters = new HttpParams()
       .set('visibility', this.visibility())
       .set('expiration', this.expiration())
       .set('title', this.shareTitle())
       .set('note', this.shareNote())
-      .set('bundleName', bundleName);
-    const request = new HttpRequest('POST', `/api/shares/bundle?${parameters.toString()}`, form, {
+      .set('collectionName', collectionName);
+    const request = new HttpRequest('POST', `/api/collections?${parameters.toString()}`, form, {
       reportProgress: true,
       responseType: 'json',
     });
@@ -552,7 +575,7 @@ export class App implements OnInit, OnDestroy {
           this.createdShares.set([event.body]);
           this.uploading.set(false);
           this.uploadProgress.set(100);
-          this.notice.set(`${files.length} fájl egy ZIP-csomagban elkészült.`);
+          this.notice.set(`${files.length} fájl egy közös gyűjteményben elkészült.`);
           void this.createQrCode(this.getShareLink(event.body));
           this.loadSharedFiles(true);
           this.loadOwnedShares(true);
@@ -560,7 +583,7 @@ export class App implements OnInit, OnDestroy {
         }
       },
       error: (error: HttpErrorResponse) => {
-        this.notice.set(this.readError(error, 'A ZIP-csomag feltöltése nem sikerült.'));
+        this.notice.set(this.readError(error, 'A gyűjtemény feltöltése nem sikerült.'));
         this.uploading.set(false);
       },
     });
@@ -640,6 +663,71 @@ export class App implements OnInit, OnDestroy {
 
   protected downloadShare(share: Share): void {
     this.startDownload(share);
+  }
+
+  protected closeCollection(): void {
+    this.openedCollection.set(null);
+    this.collectionBusy.set(false);
+  }
+
+  protected downloadCollectionFiles(): void {
+    const details = this.openedCollection();
+    if (!details || this.collectionBusy()) return;
+
+    this.collectionBusy.set(true);
+    this.http.post<CollectionDownload>(details.beginDownloadUrl, {}).subscribe({
+      next: result => {
+        const files = result.files;
+        if (!files.length) {
+          this.collectionBusy.set(false);
+          this.notice.set('Ebben a gyűjteményben nincs letölthető fájl.');
+          return;
+        }
+
+        if (!this.isNativeApp) {
+          this.startBrowserCollectionDownloads(files);
+          this.collectionBusy.set(false);
+          this.notice.set(`${files.length} külön fájl letöltése elindult. A böngésző engedélyt kérhet több letöltéshez.`);
+          return;
+        }
+
+        void Promise.all(files.map(file => ShareReceiver.downloadFile({
+          url: this.getAbsoluteDownloadUrl(file.downloadUrl),
+          fileName: file.fileName,
+        })))
+          .then(() => this.notice.set(`${files.length} külön fájl letöltése elindult. Az Android értesítései között követheted.`))
+          .catch(() => {
+            this.startBrowserCollectionDownloads(files);
+            this.notice.set('A telefonos alkalmazást frissíteni kell a közvetlen többfájlos letöltéshez. A letöltést a böngészőben indítottuk el.');
+          })
+          .finally(() => this.collectionBusy.set(false));
+      },
+      error: (error: HttpErrorResponse) => {
+        this.collectionBusy.set(false);
+        this.notice.set(this.readError(error, 'A fájlok letöltését nem sikerült elindítani.'));
+      },
+    });
+  }
+
+  protected downloadCollectionZip(): void {
+    const details = this.openedCollection();
+    if (!details || this.collectionBusy()) return;
+    const baseName = details.collection.title || details.collection.fileName;
+    const fileName = baseName.toLowerCase().endsWith('.zip') ? baseName : `${baseName}.zip`;
+    const url = this.getAbsoluteDownloadUrl(details.zipDownloadUrl);
+
+    if (!this.isNativeApp) {
+      window.location.assign(url);
+      return;
+    }
+
+    this.collectionBusy.set(true);
+    void ShareReceiver.downloadFile({ url, fileName })
+      .then(() => this.notice.set('A ZIP előállítása és letöltése elindult. Az Android értesítései között követheted.'))
+      .catch(() => ShareReceiver.openExternalUrl({ url })
+        .then(() => this.notice.set('A ZIP letöltését a külső böngészőben indítottuk el.')))
+      .catch(() => window.location.assign(url))
+      .finally(() => this.collectionBusy.set(false));
   }
 
   protected downloadAppRelease(): void {
@@ -738,6 +826,11 @@ export class App implements OnInit, OnDestroy {
   }
 
   private startDownload(share: Share): void {
+    if (share.isCollection) {
+      this.openCollection(share);
+      return;
+    }
+
     if (!this.isNativeApp) {
       window.location.assign(share.downloadUrl);
       return;
@@ -753,6 +846,33 @@ export class App implements OnInit, OnDestroy {
           .then(() => this.notice.set('A letöltést a külső böngészőben indítottuk el. Az alkalmazás frissítése után közvetlenül itt fog működni.'))
           .catch(() => window.location.assign(url));
       });
+  }
+
+  private openCollection(share: Share): void {
+    this.collectionBusy.set(true);
+    this.http.get<CollectionDetails>(share.downloadUrl).subscribe({
+      next: details => {
+        this.openedCollection.set(details);
+        this.activeView.set('download');
+        this.collectionBusy.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.collectionBusy.set(false);
+        this.notice.set(this.readError(error, 'A fájlcsoportot nem sikerült megnyitni.'));
+      },
+    });
+  }
+
+  private startBrowserCollectionDownloads(files: CollectionFile[]): void {
+    for (const file of files) {
+      const anchor = document.createElement('a');
+      anchor.href = this.getAbsoluteDownloadUrl(file.downloadUrl);
+      anchor.download = file.fileName;
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }
   }
 
   protected getShareLink(share: Share): string {
@@ -774,7 +894,7 @@ export class App implements OnInit, OnDestroy {
     this.nativeSharedFiles.set([]);
     if (Capacitor.isNativePlatform()) void ShareReceiver.clearPendingFiles();
     this.selectedFiles.set(files);
-    if (files.length > 1) this.uploadMode.set('bundle');
+    if (files.length > 1) this.uploadMode.set('collection');
     this.shareTitle.set('');
     this.shareNote.set('');
     this.createdShare.set(null);
@@ -954,7 +1074,7 @@ export class App implements OnInit, OnDestroy {
     if (!files.length) return;
     this.selectedFiles.set([]);
     this.nativeSharedFiles.set(files);
-    this.uploadMode.set(files.length > 1 ? 'bundle' : 'separate');
+    this.uploadMode.set(files.length > 1 ? 'collection' : 'separate');
     this.shareTitle.set('');
     this.shareNote.set('');
     this.createdShare.set(null);

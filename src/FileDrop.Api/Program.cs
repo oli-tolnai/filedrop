@@ -86,18 +86,23 @@ app.Run();
 
 static void EnsureShareMetadataColumns(FileDropDbContext db)
 {
-    try
-    {
-        db.Database.ExecuteSqlRaw("ALTER TABLE SharedFiles ADD COLUMN Title TEXT NULL;");
-    }
-    catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
-    {
-        // Existing installations already have this column.
-    }
+    AddShareColumnIfMissing(db, "Title TEXT NULL");
+    AddShareColumnIfMissing(db, "Note TEXT NULL");
+    AddShareColumnIfMissing(db, "IsCollection INTEGER NOT NULL DEFAULT 0");
+    AddShareColumnIfMissing(db, "ParentShareId TEXT NULL");
+    AddShareColumnIfMissing(db, "RelativePath TEXT NULL");
+    AddShareColumnIfMissing(db, "BatchAccessTokenHash TEXT NULL");
+    AddShareColumnIfMissing(db, "BatchAccessExpiresAtUtc TEXT NULL");
+    db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_SharedFiles_ParentShareId ON SharedFiles (ParentShareId);");
+}
 
+static void AddShareColumnIfMissing(FileDropDbContext db, string definition)
+{
     try
     {
-        db.Database.ExecuteSqlRaw("ALTER TABLE SharedFiles ADD COLUMN Note TEXT NULL;");
+#pragma warning disable EF1003 // The definitions are hard-coded immediately above, never user input.
+        db.Database.ExecuteSqlRaw("ALTER TABLE SharedFiles ADD COLUMN " + definition + ";");
+#pragma warning restore EF1003
     }
     catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
     {

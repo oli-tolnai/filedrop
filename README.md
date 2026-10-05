@@ -8,7 +8,7 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 - Bejelentkezés után látható közös LAN-lista, illetve linkkel, QR-kóddal vagy hat karakteres kóddal elérhető rejtett megosztás.
 - Lejárat: első sikeres letöltés, 15 perc, 1 óra (alapértelmezett), 24 óra, 7 nap vagy kézi visszavonás.
 - Valódi fájlfeltöltés folyamatjelzővel és letöltés eredeti fájlnéven.
-- Több fájl vagy teljes mappa választható. Ezek kérés szerint egyetlen, mappaszerkezetet megőrző ZIP-csomagot és közös kódot kapnak, vagy külön megosztásokként készülnek el.
+- Több fájl vagy teljes mappa választható. Az alapértelmezett gyűjtemény egy közös kódot kap, de a szerver az eredeti fájlokat külön tárolja. Telefonon ezek külön tölthetők le; ZIP csak külön kérésre, közvetlenül a letöltéskor készül, és nem marad a szerveren. A külön megosztás mód továbbra is fájlonkénti kódot ad.
 - Tulajdonosi és családtag-fiókok biztonságosan hash-elt jelszóval.
 - A fiókjelszó legalább 4 számjegy lehet; ez csak megbízható LAN-on kényelmes, Tailscale-es távoli használat előtt erősebb védelem szükséges.
 - A közös fájlok listája és közvetlen letöltése belépést kér; a kódos letöltés fiók nélkül is használható.
@@ -73,7 +73,7 @@ Az Android-projekt a `src/FileDrop.Web/android` könyvtárban található. A jel
 alkalmazás a LAN-on futó `http://192.168.0.34:8090` szolgáltatást nyitja meg, ezért
 otthon internet nélkül is működik, de másik hálózatról még nem érhető el. A
 telefon Megosztás menüjéből kapott fájlokat közvetlenül, memóriába másolás nélkül
-tölti fel; több fájl egy ZIP-ként vagy külön megosztásokként is küldhető.
+tölti fel; több fájl közös gyűjteményként vagy külön megosztásokként is küldhető.
 
 ### Aláírt APK-kiadás
 
@@ -91,9 +91,9 @@ Példa a manifestre:
 
 ```json
 {
-  "versionCode": 1,
-  "versionName": "1.0.0",
-  "fileName": "filedrop-1.0.0.apk"
+  "versionCode": 3,
+  "versionName": "1.0.2",
+  "fileName": "filedrop-1.0.2.apk"
 }
 ```
 
@@ -128,9 +128,9 @@ A mostani LAN-változat HTTP-t használ. Ez családi, megbízható hálózaton k
 - Letöltött fájl SHA-256 egyezés: sikeres.
 - Többeszközös belépés, saját előzmény és visszavonás: sikeres.
 - Docker image build és korlátozott jogosultságú futtatás: sikeres.
-- Kétfájlos ZIP-feltöltés, közös kód, visszatöltés és mappaszerkezet: sikeres.
+- Kétfájlos gyűjtemény-feltöltés, közös kód, külön fájlos visszatöltés és menet közben előállított ZIP: sikeres.
 - Android debug APK fordítása JDK 21-gyel: sikeres.
-- Android release APK 1.0.0 fordítása és v2-es aláírásának ellenőrzése: sikeres.
+- Android release APK 1.0.2 fordítása és v2-es aláírásának ellenőrzése: sikeres.
 
 ## Következő lépések
 

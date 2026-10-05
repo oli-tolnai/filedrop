@@ -150,13 +150,13 @@ public class ShareReceiverPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void uploadBundle(PluginCall call) {
+    public void uploadCollection(PluginCall call) {
         String serverUrl = call.getString("serverUrl");
         String visibility = call.getString("visibility");
         String expiration = call.getString("expiration");
         String title = call.getString("title", "");
         String note = call.getString("note", "");
-        String bundleName = call.getString("bundleName", "filedrop-csomag.zip");
+        String collectionName = call.getString("collectionName", "filedrop-gyujtemeny");
         if (serverUrl == null || visibility == null || expiration == null) {
             call.reject("Hiányos feltöltési beállítások.");
             return;
@@ -170,7 +170,7 @@ public class ShareReceiverPlugin extends Plugin {
             call.reject("A csomaghoz legalább két fájl szükséges.");
             return;
         }
-        new Thread(() -> uploadBundleInBackground(call, files, serverUrl, visibility, expiration, title, note, bundleName), "filedrop-native-bundle-upload").start();
+        new Thread(() -> uploadCollectionInBackground(call, files, serverUrl, visibility, expiration, title, note, collectionName), "filedrop-native-collection-upload").start();
     }
 
     private void uploadInBackground(
@@ -241,7 +241,7 @@ public class ShareReceiverPlugin extends Plugin {
         }
     }
 
-    private void uploadBundleInBackground(
+    private void uploadCollectionInBackground(
         PluginCall call,
         List<PendingFile> files,
         String serverUrl,
@@ -249,7 +249,7 @@ public class ShareReceiverPlugin extends Plugin {
         String expiration,
         String title,
         String note,
-        String bundleName
+        String collectionName
     ) {
         HttpURLConnection connection = null;
         try {
@@ -257,8 +257,8 @@ public class ShareReceiverPlugin extends Plugin {
                 + "&expiration=" + encode(expiration)
                 + "&title=" + encode(title)
                 + "&note=" + encode(note)
-                + "&bundleName=" + encode(bundleName);
-            URL endpoint = new URI(serverUrl + "/api/shares/bundle?" + query).toURL();
+                + "&collectionName=" + encode(collectionName);
+            URL endpoint = new URI(serverUrl + "/api/collections?" + query).toURL();
             String boundary = "FileDrop-" + UUID.randomUUID();
             List<byte[]> headers = new ArrayList<>();
             long contentLength = 0;
@@ -299,7 +299,7 @@ public class ShareReceiverPlugin extends Plugin {
                             output.write(buffer, 0, read);
                             loaded += read;
                             JSObject progress = new JSObject();
-                            progress.put("id", "bundle");
+                            progress.put("id", "collection");
                             progress.put("loaded", loaded);
                             progress.put("total", filesSize);
                             notifyListeners("uploadProgress", progress);
@@ -315,7 +315,7 @@ public class ShareReceiverPlugin extends Plugin {
             InputStream responseStream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
             String response = readText(responseStream);
             if (status < 200 || status >= 300) {
-                call.reject(apiMessage(response, "A natív ZIP-feltöltés nem sikerült (HTTP " + status + ")."));
+                call.reject(apiMessage(response, "A natív gyűjtemény-feltöltés nem sikerült (HTTP " + status + ")."));
                 return;
             }
             synchronized (pendingFiles) {
@@ -325,7 +325,7 @@ public class ShareReceiverPlugin extends Plugin {
             result.put("response", response);
             call.resolve(result);
         } catch (Exception error) {
-            call.reject("A natív ZIP-feltöltés megszakadt: " + error.getMessage(), error);
+            call.reject("A natív gyűjtemény-feltöltés megszakadt: " + error.getMessage(), error);
         } finally {
             if (connection != null) connection.disconnect();
         }

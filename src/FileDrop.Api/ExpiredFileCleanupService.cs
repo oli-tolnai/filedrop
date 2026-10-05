@@ -23,8 +23,35 @@ public sealed class ExpiredFileCleanupService(
             using var scope = scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<FileDropDbContext>();
             var now = DateTime.UtcNow;
+            var expiredCollections = await db.SharedFiles
+                .Include(file => file.CollectionFiles)
+                .Where(file => file.IsCollection
+                    && file.ParentShareId == null
+                    && file.FileDeletedAtUtc == null
+                    && ((file.ConsumedAtUtc != null
+                            && (file.BatchAccessExpiresAtUtc == null || file.BatchAccessExpiresAtUtc <= now))
+                        || (file.ExpiresAtUtc != null && file.ExpiresAtUtc <= now)))
+                .ToListAsync(cancellationToken);
+
+            foreach (var collection in expiredCollections)
+            {
+                foreach (var file in collection.CollectionFiles.Where(file => file.FileDeletedAtUtc == null))
+                {
+                    ShareEndpoints.SafeDelete(Path.Combine(storage.StoragePath, file.StoredFileName));
+                    file.FileDeletedAtUtc = now;
+                    file.AccessCode = null;
+                }
+
+                collection.FileDeletedAtUtc = now;
+                collection.AccessCode = null;
+                collection.BatchAccessTokenHash = null;
+                collection.BatchAccessExpiresAtUtc = null;
+            }
+
             var expired = await db.SharedFiles
                 .Where(file => file.FileDeletedAtUtc == null
+                    && !file.IsCollection
+                    && file.ParentShareId == null
                     && (file.ConsumedAtUtc != null
                         || (file.ExpiresAtUtc != null && file.ExpiresAtUtc <= now)))
                 .ToListAsync(cancellationToken);
