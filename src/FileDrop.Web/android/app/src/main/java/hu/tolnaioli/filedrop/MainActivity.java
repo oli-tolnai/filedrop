@@ -19,13 +19,18 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void load() {
-        // A hálózati próba nem futhat a főszálon. A Bridge csak az URL kiválasztása
-        // után indul, így az Angular ugyanarról a szerver-originről működik LAN-on
-        // és Tailscale-en is; nincs szükség kereszt-origin sütikre.
-        new Thread(() -> {
-            String serverUrl = resolveServerUrl();
-            runOnUiThread(() -> startBridge(serverUrl));
-        }, "filedrop-server-selection").start();
+        // A hálózati próba háttérszálon fut, de a Bridge létrehozása még a
+        // BridgeActivity.load() hívásán belül történik. Így az Activity nem
+        // marad félig inicializált állapotban Android-induláskor.
+        final String[] selectedUrl = {LAN_SERVER_URL};
+        Thread probe = new Thread(() -> selectedUrl[0] = resolveServerUrl(), "filedrop-server-selection");
+        probe.start();
+        try {
+            probe.join(2500L);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        startBridge(selectedUrl[0]);
     }
 
     private void startBridge(String serverUrl) {
@@ -55,8 +60,8 @@ public class MainActivity extends BridgeActivity {
         try {
             URL url = new URI(serverUrl + "/api/health").toURL();
             connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(1800);
-            connection.setReadTimeout(1800);
+            connection.setConnectTimeout(800);
+            connection.setReadTimeout(800);
             connection.setRequestMethod("GET");
             connection.setUseCaches(false);
             return connection.getResponseCode() == HttpURLConnection.HTTP_OK;
