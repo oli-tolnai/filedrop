@@ -32,7 +32,6 @@ services:
   filedrop-tailscale:
     image: tailscale/tailscale:latest
     container_name: filedrop-tailscale
-    hostname: filedrop-tailscale
     network_mode: service:filedrop
     depends_on:
       filedrop:
