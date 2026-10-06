@@ -731,7 +731,7 @@ export class App implements OnInit, OnDestroy {
         }
         this.notice.set(files.length === 1 ? 'A fájl feltöltése elkészült.' : `${files.length} külön fájl feltöltése elkészült.`);
       }
-      this.nativeSharedFiles.set([]);
+      this.clearPendingUploadFiles();
       this.uploadProgress.set(100);
       this.loadSharedFiles(true);
       this.loadOwnedShares(true);
@@ -775,6 +775,7 @@ export class App implements OnInit, OnDestroy {
           this.createdShare.set(event.body);
           this.createdShares.set([event.body]);
           this.uploading.set(false);
+          this.clearPendingUploadFiles();
           this.uploadProgress.set(100);
           this.notice.set(`${files.length} fájl egy közös gyűjteményben elkészült.`);
           void this.createQrCode(this.getShareLink(event.body));
@@ -792,6 +793,7 @@ export class App implements OnInit, OnDestroy {
 
   private uploadFilesSequentially(files: File[], index: number, completedBytes: number, totalBytes: number): void {
     if (index >= files.length) {
+      this.clearPendingUploadFiles();
       this.uploading.set(false);
       this.uploadProgress.set(100);
       this.notice.set(files.length === 1 ? 'A fájl feltöltése elkészült.' : `${files.length} fájl feltöltése elkészült.`);
@@ -1118,6 +1120,16 @@ export class App implements OnInit, OnDestroy {
     if (files.length && storage && this.selectedTotalBytes() > storage.uploadCapacityBytes) {
       this.notice.set('A kiválasztott fájlokhoz nincs elég hely a 100 GB-os biztonsági tartalék megtartásával.');
     }
+  }
+
+  private clearPendingUploadFiles(): void {
+    this.selectedFiles.set([]);
+    this.nativeSharedFiles.set([]);
+    if (Capacitor.isNativePlatform()) void ShareReceiver.clearPendingFiles();
+
+    document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach(input => {
+      input.value = '';
+    });
   }
 
   private async readDroppedEntry(entry: DroppedEntry, parentPath = ''): Promise<File[]> {
