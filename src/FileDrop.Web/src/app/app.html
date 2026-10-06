@@ -11,17 +11,22 @@
       <div class="invite-meta"><span>Kód: <strong>{{ invitation.code }}</strong></span><span>Nyitva eddig: <strong>{{ formatDateTime(invitation.expiresAtUtc) }}</strong></span><span>Keret: <strong>{{ formatSize(invitation.maxTotalBytes) }}</strong></span></div>
 
       <input #publicFilePicker class="visually-hidden" type="file" multiple (change)="selectPublicInviteFiles($event)" />
-      <section class="public-upload-zone">
+      <section class="public-upload-zone" [class.has-file]="publicInviteFiles().length" (dragover)="keepFileHere($event)" (drop)="dropPublicInviteFiles($event)">
         <h2>Mit szeretnél elküldeni?</h2>
-        <button type="button" class="choose-button" (click)="publicFilePicker.click()">Fájlok kiválasztása</button>
+        <div class="public-drop-prompt">
+          <span class="drop-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 21V5m0 0-5.5 5.5M16 5l5.5 5.5M7 19v5.25C7 25.77 8.23 27 9.75 27h12.5C23.77 27 25 25.77 25 24.25V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <strong>Húzd ide a fájlokat</strong><span>vagy válaszd ki őket erről az eszközről</span>
+          <button type="button" class="choose-button" (click)="publicFilePicker.click()">Fájlok kiválasztása</button>
+        </div>
         @if (publicInviteFiles().length) {
           <div class="invite-file-list selected-invite-files">
             @for (file of publicInviteFiles(); track file.name + file.size + file.lastModified) {
               <div><span><strong>{{ file.name }}</strong><small>{{ formatSize(file.size) }}</small></span><button type="button" class="remove-file-button" (click)="removePublicInviteFile($index)" aria-label="Fájl eltávolítása">×</button></div>
             }
           </div>
-          <button type="button" class="invite-primary" [disabled]="publicInviteUploading()" (click)="uploadToInvitation()">{{ publicInviteUploading() ? 'Feltöltés…' : publicInviteFiles().length + ' fájl elküldése' }}</button>
         }
+        <button type="button" class="invite-primary public-send-button" [disabled]="!publicInviteFiles().length || publicInviteUploading()" (click)="uploadToInvitation()">{{ publicInviteUploading() ? 'Feltöltés a szerverre…' : publicInviteFiles().length ? publicInviteFiles().length + ' fájl elküldése' : 'Fájlok elküldése' }}</button>
+        <small class="send-explanation">Ez a gomb azonnal feltölti a fájlokat. A címzett később csak átveszi és lezárja a meghívót.</small>
       </section>
 
       <section class="public-own-uploads">
@@ -170,7 +175,7 @@
                       @for (upload of invitation.uploads; track upload.id) { <div><span><strong>{{ upload.fileName }}</strong><small>{{ formatSize(upload.sizeBytes) }} · Feltöltő {{ upload.uploaderOrdinal }}</small></span>@if (invitation.state === 'open') { <button type="button" class="danger-button" (click)="deleteInvitationUpload(invitation, upload)">Törlés</button> }</div> }
                     </div>
                   }
-                  @if (invitation.state === 'open') { <button type="button" class="invite-primary close-invite" [disabled]="!invitation.uploads.length" (click)="closeInvitation(invitation)">Átvettem, meghívó lezárása</button> }
+                  @if (invitation.state === 'open') { <div class="close-invite-area"><small>A felsorolt fájlok már a szerveren vannak.</small><button type="button" class="invite-primary close-invite" [disabled]="!invitation.uploads.length" (click)="closeInvitation(invitation)">Fájlok átvétele és meghívó lezárása</button></div> }
                 </article>
               }
             </div>

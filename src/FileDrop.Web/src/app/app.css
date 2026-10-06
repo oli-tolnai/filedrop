@@ -144,7 +144,9 @@
 .invite-state { display: inline-flex; border-radius: 999px; padding: 3px 8px; background: #e9eef2; font-size: 12px; font-weight: 750; }
 .invite-state.open { background: #dcefe8; color: #146044; }
 .invitation-actions { display: flex; gap: 8px; align-items: flex-start; }
-.close-invite { margin-top: 12px; }
+.close-invite-area { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.close-invite-area small { color: var(--muted); }
+.close-invite { flex: 0 0 auto; }
 
 .invite-file-list { display: grid; gap: 7px; margin-top: 12px; }
 .invite-file-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: #f2f6f8; }
@@ -166,6 +168,14 @@
 .invite-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 19px 0; color: var(--muted); font-size: 14px; }
 .invite-meta strong { color: var(--ink); }
 .public-upload-zone, .public-own-uploads { margin-top: 14px; padding: 18px; background: #fbfdfe; }
+.public-upload-zone { border-style: dashed; transition: border-color .15s ease, background-color .15s ease; }
+.public-upload-zone:hover, .public-upload-zone.has-file { border-color: #7ab2ca; background: #f3fafb; }
+.public-drop-prompt { display: grid; place-items: center; gap: 6px; min-height: 150px; padding: 16px; text-align: center; color: var(--muted); }
+.public-drop-prompt .drop-icon { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 14px; background: var(--pale-blue); color: var(--blue); }
+.public-drop-prompt .drop-icon svg { width: 27px; height: 27px; }
+.public-drop-prompt strong { color: var(--ink); font-size: 17px; }
+.public-send-button { width: 100%; margin-top: 12px; }
+.send-explanation { display: block; margin-top: 8px; color: var(--muted); line-height: 1.45; text-align: center; }
 .public-own-uploads > div:first-child { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .public-own-uploads h2 { margin-bottom: 0; }
 .selected-invite-files { margin-bottom: 12px; }
@@ -178,6 +188,7 @@
   .invitation-create-panel, .invitation-result, .invitation-explainer, .invitation-list-panel { padding: 16px; }
   .invitation-row-top { flex-direction: column; }
   .invitation-actions { flex-wrap: wrap; }
+  .close-invite-area { align-items: stretch; flex-direction: column; }
   .invite-public-shell { padding: 10px; }
   .invite-public-card { padding: 18px 14px; border-radius: 14px; }
   .invite-public-brand { margin-bottom: 26px; }

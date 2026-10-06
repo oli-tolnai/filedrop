@@ -312,7 +312,33 @@ export class App implements OnInit, OnDestroy {
 
   protected selectPublicInviteFiles(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const current = [...this.publicInviteFiles(), ...Array.from(input.files ?? [])];
+    this.addPublicInviteFiles(Array.from(input.files ?? []));
+    input.value = '';
+  }
+
+  protected async dropPublicInviteFiles(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    const items = Array.from(event.dataTransfer?.items ?? []);
+    const entries = items
+      .map(item => {
+        const getEntry = (item as unknown as { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry;
+        return typeof getEntry === 'function' ? getEntry.call(item) as DroppedEntry | null : null;
+      })
+      .filter((entry): entry is DroppedEntry => entry !== null);
+    try {
+      const files = entries.length
+        ? (await Promise.all(entries.map(entry => this.readDroppedEntry(entry)))).flat()
+        : Array.from(event.dataTransfer?.files ?? []);
+      this.addPublicInviteFiles(files);
+      if (!files.length) this.notice.set('A behúzott elem nem tartalmazott olvasható fájlt.');
+    } catch {
+      this.notice.set('A behúzott fájlok nem olvashatók be. Használd a fájlválasztó gombot.');
+    }
+  }
+
+  private addPublicInviteFiles(files: File[]): void {
+    const current = [...this.publicInviteFiles(), ...files];
     const seen = new Set<string>();
     this.publicInviteFiles.set(current.filter(file => {
       const key = this.fileIdentity(file);
@@ -320,7 +346,6 @@ export class App implements OnInit, OnDestroy {
       seen.add(key);
       return true;
     }));
-    input.value = '';
   }
 
   protected removePublicInviteFile(index: number): void {
@@ -337,7 +362,7 @@ export class App implements OnInit, OnDestroy {
     this.http.post<InvitationUpload[]>(`/api/public/invitations/${encodeURIComponent(code)}/uploads`, form).subscribe({
       next: () => {
         this.publicInviteFiles.set([]);
-        this.notice.set('A fájlok megérkeztek. A meghívó lezárásáig még törölheted vagy pótolhatod őket.');
+        this.notice.set('A fájlok felkerültek a szerverre. A meghívó lezárásáig még törölheted vagy pótolhatod őket.');
         this.loadPublicInvitation();
       },
       error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A feltöltés nem sikerült.')),
