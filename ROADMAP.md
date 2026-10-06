@@ -6,7 +6,7 @@ A FileDrop három, egymástól elkülönített használati módja legyen megbíz
 
 1. otthoni LAN-on böngészőből és Android alkalmazásból;
 2. családtagoknak távolról, kizárólag Tailscale-en;
-3. idegen vagy iskolai gépről egy előre létrehozott, egyszer használható feltöltési meghívóval.
+3. idegen vagy iskolai gépről egy előre létrehozott, ideiglenes feltöltési meghívóval.
 
 A `filedrop.home.arpa` név egyelőre nem része a feladatnak. Routerportot nem nyitunk.
 
@@ -33,7 +33,7 @@ A `filedrop.home.arpa` név egyelőre nem része a feladatnak. Routerportot nem 
 
 **Késznek tekinthető**, ha mobilinternetről, bekapcsolt Tailscale mellett minden családi funkció működik, kikapcsolt Tailscale mellett pedig a szolgáltatás nem érhető el nyilvánosan.
 
-## 3. Egyszer használható nyilvános feltöltési meghívó
+## 3. Ideiglenes nyilvános feltöltési meghívó
 
 Két azonos módon védett felhasználási eset tartozik ide:
 
@@ -42,19 +42,20 @@ Két azonos módon védett felhasználási eset tartozik ide:
 
 - Meghívót csak bejelentkezett családtag hozhat létre LAN-ról vagy Tailscale-ről.
 - Meghívót minden bejelentkezett felhasználó létrehozhat; ehhez nem szükséges adminisztrátori jogosultság. A meghívó és a beérkező fájl a létrehozó fiókjához tartozik.
-- Létrehozáskor külön megadható a meghívó rövid élettartama, a maximális összméret, valamint hogy egy fájl vagy több fájl tölthető-e fel. Több fájl egyetlen beérkező csomagként tartozik a meghívóhoz.
+- Létrehozáskor külön megadható a meghívó rövid élettartama és 100 MB–100 GB közötti teljes méretkerete. Egy vagy több fájl tölthető fel; a választott kereten felül a normál dinamikus tárhelyszabály is érvényes.
 - A létrehozó előre kiválasztja a beérkező megosztás láthatóságát: **közös** esetben minden belépett családtag listában látja és letöltheti; **privát** esetben csak a létrehozó látja a saját listájában, más pedig csak a kód vagy link birtokában töltheti le.
 - A létrehozó azt is előre megadja, hogy a sikeres feltöltés után meddig éljen a megosztás: első letöltésig, 15 percig, 1 óráig, 24 óráig, 7 napig vagy kézi törlésig.
-- A meghívónak adhatsz címet, hogy később tudd, kitől és mit vársz. A feltöltő opcionálisan megadhatja a nevét és egy rövid megjegyzést, de fiókot nem hozhat létre.
-- A cím rövid, de interneten nem lehet hat karakteres: legalább 10 véletlen, könnyen gépelhető karaktert használunk, például `drop.tolnaioli.hu/u/7KDM-4QPX-9R`.
-- A meghívó legfeljebb a létrehozáskor választott rövid ideig él, az első sikeres feltöltés után azonnal érvénytelenné válik, és kézzel is visszavonható.
-- A sikeres feltöltés normál FileDrop-megosztássá válik: kap hatkarakteres letöltési kódot, linket és QR-kódot, megjelenik a létrehozó saját megosztásai között, és a kiválasztott láthatóságot és feltöltés utáni lejáratot használja.
+- A meghívónak adhatsz címet és rövid üzenetet, hogy később tudd, kitől és mit vársz.
+- A cím nyolc véletlen, könnyen gépelhető karaktert használ, például `drop.tolnaioli.hu/u/7KDM-4QPX`. A kötőjel csak az olvashatóságot segíti.
+- A meghívó a létrehozáskor választott rövid ideig vagy a tulajdonos lezárásáig él. A küldő addig további fájlokat adhat hozzá, a saját hibás feltöltéseit törölheti, a meghívó pedig kézzel is visszavonható.
+- Ugyanazt a linket több ember is használhatja. Minden böngésző külön, véletlen HttpOnly munkamenetet kap; egy küldő nem láthatja és nem törölheti más küldő fájlját. A tulajdonos minden beérkező fájlt lát.
+- A tulajdonos lezárásakor a beérkezett fájlok normál FileDrop-megosztássá válnak: egy közös hatkarakteres letöltési kódot, linket és QR-kódot kapnak, megjelennek a létrehozó saját megosztásai között, és a kiválasztott láthatóságot és feltöltés utáni lejáratot használják.
 - A nyilvános oldalon nincs fájllista, bejelentkezés, letöltés, adminfelület vagy általános feltöltés; csak az adott meghívó használható.
 - Cloudflare Tunnel kizárólag ezt a szűk nyilvános végpontot teszi elérhetővé. A fő FileDrop felület LAN/Tailscale mögött marad.
 - Szükséges sebesség- és próbálkozáskorlát, tárhelyellenőrzés, fájlnév-tisztítás, naplózás és a sikertelen feltöltések automatikus takarítása.
 - A feltöltött fájl nem tekinthető automatikusan biztonságosnak: megnyitás előtt a tulajdonos látja a forrást, méretet és fájltípust; később vírusellenőrzés is hozzáadható.
 
-**Késznek tekinthető**, ha egy meghívóval pontosan egyszer lehet feltölteni, lejárat és visszavonás után nem használható, találgatással nem érhető el, és a publikus címről a FileDrop egyetlen más funkciója sem nyitható meg.
+**Késznek tekinthető**, ha a meghívó lezárásáig biztonságosan javítható a feltöltés, lezárás, lejárat és visszavonás után nem használható, más feltöltő fájlja nem kezelhető, és a publikus címről a FileDrop egyetlen más funkciója sem nyitható meg.
 
 ## Javasolt megvalósítási sorrend
 
@@ -63,5 +64,5 @@ Két azonos módon védett felhasználási eset tartozik ide:
 3. Aláírt APK, letöltőoldal és verziójelzés.
 4. Mentés és próba-visszaállítás.
 5. Tailscale HTTPS és szűk jogosultságok.
-6. Egyszer használható nyilvános feltöltési meghívó.
+6. Ideiglenes nyilvános feltöltési meghívó.
 7. Biztonsági és terhelési ellenőrzés, majd végleges dokumentáció.

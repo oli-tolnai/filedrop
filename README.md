@@ -19,6 +19,8 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 - A webalkalmazás PWA-alapjai elkészültek. Az Android Capacitor-alkalmazás a rendszer Megosztás menüjéből egy vagy több fájlt is átvesz, majd ugyanazt a csomag/külön módot kínálja.
 - A kódpróbálkozás és a bejelentkezés sebességkorlátozott.
 - A lejárt fájlok és munkamenetek automatikusan takarítódnak, újraindítás után is.
+- Bármely belépett családtag létrehozhat rövid, nyolckarakteres feltöltési meghívót. A vendég fiók nélkül több fájlt küldhet, a saját ideiglenes fájljait javíthatja vagy törölheti, a tulajdonos pedig átvételkor normál FileDrop-megosztássá zárja le a csomagot.
+- Azonos meghívót több küldő is használhat: külön HttpOnly böngésző-munkamenetet kapnak, ezért egymás fájljait nem látják és nem törölhetik.
 
 ## Tárhelyszabályok
 
@@ -137,4 +139,4 @@ A mostani LAN-változat HTTP-t használ. Ez családi, megbízható hálózaton k
 1. Az aláírt APK és a manifest telepítése a Dellre, majd helyi telefonos/laptopos próba.
 2. Mentési és próba-visszaállítási eljárás.
 3. Helyi DNS-név, HTTPS és külön Tailscale-hozzáférés.
-4. Külön, lejáró publikus letöltési link és feltöltési kérés idegeneknek.
+4. A feltöltési meghívó szűk Cloudflare Tunnel útvonala és nyilvános biztonsági próba. A Tunnel csak a `/u/...` oldalt és a hozzá tartozó publikus API-t engedheti át.

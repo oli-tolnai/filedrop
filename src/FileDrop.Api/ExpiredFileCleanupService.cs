@@ -63,6 +63,18 @@ public sealed class ExpiredFileCleanupService(
                 share.AccessCode = null;
             }
 
+            var expiredInvitationUploads = await db.InvitationUploads
+                .Include(item => item.Invitation)
+                .Where(item => item.Invitation!.ClosedAtUtc == null
+                    && item.Invitation.RevokedAtUtc == null
+                    && item.Invitation.ExpiresAtUtc <= now)
+                .ToListAsync(cancellationToken);
+            foreach (var upload in expiredInvitationUploads)
+            {
+                ShareEndpoints.SafeDelete(Path.Combine(storage.StoragePath, upload.StoredFileName));
+            }
+            db.InvitationUploads.RemoveRange(expiredInvitationUploads);
+
             if (Directory.Exists(storage.TemporaryPath))
             {
                 foreach (var temporaryFile in Directory.EnumerateFiles(storage.TemporaryPath, "*.uploading"))
@@ -76,6 +88,9 @@ public sealed class ExpiredFileCleanupService(
 
             await db.SaveChangesAsync(cancellationToken);
             await db.UserSessions
+                .Where(session => session.ExpiresAtUtc <= now)
+                .ExecuteDeleteAsync(cancellationToken);
+            await db.InvitationUploaderSessions
                 .Where(session => session.ExpiresAtUtc <= now)
                 .ExecuteDeleteAsync(cancellationToken);
         }

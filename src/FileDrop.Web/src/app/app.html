@@ -1,3 +1,48 @@
+@if (publicInviteCode()) {
+<div class="invite-public-shell">
+  <main class="invite-public-card">
+    <a class="brand invite-public-brand" href="/" aria-label="FileDrop"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 4.75h10.1L25 11.7v14.55a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="2"/><path d="M18 5v7h7M11 18h10M11 22h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span>FileDrop</span></a>
+    @if (notice()) { <div class="notice" role="status"><span>{{ notice() }}</span><button type="button" aria-label="Bezárás" (click)="notice.set('')">×</button></div> }
+    @if (publicInvitation(); as invitation) {
+      <div class="invite-public-heading"><span class="invite-status-dot"></span><span>Biztonságos feltöltési meghívó</span></div>
+      <h1>{{ invitation.title || 'Fájlok küldése' }}</h1>
+      <p><strong>{{ invitation.ownerDisplayName || 'A címzett' }}</strong> ezen a meghívón keresztül vár fájlokat.</p>
+      @if (invitation.note) { <p class="invite-note">{{ invitation.note }}</p> }
+      <div class="invite-meta"><span>Kód: <strong>{{ invitation.code }}</strong></span><span>Nyitva eddig: <strong>{{ formatDateTime(invitation.expiresAtUtc) }}</strong></span><span>Keret: <strong>{{ formatSize(invitation.maxTotalBytes) }}</strong></span></div>
+
+      <input #publicFilePicker class="visually-hidden" type="file" multiple (change)="selectPublicInviteFiles($event)" />
+      <section class="public-upload-zone">
+        <h2>Mit szeretnél elküldeni?</h2>
+        <button type="button" class="choose-button" (click)="publicFilePicker.click()">Fájlok kiválasztása</button>
+        @if (publicInviteFiles().length) {
+          <div class="invite-file-list selected-invite-files">
+            @for (file of publicInviteFiles(); track file.name + file.size + file.lastModified) {
+              <div><span><strong>{{ file.name }}</strong><small>{{ formatSize(file.size) }}</small></span><button type="button" class="remove-file-button" (click)="removePublicInviteFile($index)" aria-label="Fájl eltávolítása">×</button></div>
+            }
+          </div>
+          <button type="button" class="invite-primary" [disabled]="publicInviteUploading()" (click)="uploadToInvitation()">{{ publicInviteUploading() ? 'Feltöltés…' : publicInviteFiles().length + ' fájl elküldése' }}</button>
+        }
+      </section>
+
+      <section class="public-own-uploads">
+        <div><h2>Erről az eszközről elküldve</h2><span>{{ invitation.uploads.length }} fájl</span></div>
+        @if (invitation.uploads.length) {
+          <div class="invite-file-list">
+            @for (upload of invitation.uploads; track upload.id) {
+              <div><span><strong>{{ upload.fileName }}</strong><small>{{ formatSize(upload.sizeBytes) }}</small></span><button type="button" class="danger-button" (click)="deleteOwnInvitationUpload(upload)">Törlés</button></div>
+            }
+          </div>
+          <p class="privacy-hint">Csak az erről a böngészőről feltöltött fájlokat látod és törölheted. Más feltöltők fájljaihoz nincs hozzáférésed.</p>
+        } @else { <p class="empty-invite-copy">Még nem küldtél fájlt erről az eszközről.</p> }
+      </section>
+    } @else if (publicInviteState() === 'loading') {
+      <div class="invite-loading"><h1>Meghívó betöltése…</h1></div>
+    } @else {
+      <div class="invite-loading"><h1>Ez a meghívó nem használható</h1><p>Lehet, hogy lejárt, lezárták, vagy hibás a kód.</p></div>
+    }
+  </main>
+</div>
+} @else {
 <div class="app-shell">
   <header class="site-header">
     <div class="header-inner">
@@ -49,6 +94,10 @@
         <span class="nav-label-wide">Saját megosztások</span><span class="nav-label-short">Saját</span>
       </button>
       @if (accountStatus()?.account) {
+        <button type="button" [class.selected]="activeView() === 'invites'" [attr.aria-current]="activeView() === 'invites' ? 'page' : null" (click)="selectView('invites')">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5.5h12v9H4v-9Zm3 3h6M10 6v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Meghívók
+        </button>
         <button type="button" [class.selected]="activeView() === 'settings'" [attr.aria-current]="activeView() === 'settings' ? 'page' : null" (click)="selectView('settings')">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3.5 16 6v4.25c0 3.35-2.25 5.55-6 6.75-3.75-1.2-6-3.4-6-6.75V6l6-2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m7.25 10 1.75 1.75 3.75-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span class="nav-label-wide">Beállítások</span><span class="nav-label-short">Beáll.</span>
@@ -75,7 +124,60 @@
       }
     </section>
 
-    @if (activeView() === 'upload') {
+    @if (activeView() === 'invites') {
+      <section class="invitation-page" aria-labelledby="invitation-heading">
+        <div class="invitation-page-heading"><div><p class="result-kicker">Kérés külső személynek</p><h2 id="invitation-heading">Feltöltési meghívók</h2><p>Adj egy rövid, ideiglenes linket annak, aki fájlt szeretne küldeni neked.</p></div></div>
+        <div class="invitation-layout">
+          <form class="invitation-create-panel" (submit)="createInvitation($event)">
+            <h3>Új meghívó</h3>
+            <label>Megnevezés <span>(nem kötelező)</span><input name="title" maxlength="120" placeholder="például Iskolai projekt" /></label>
+            <label>Üzenet a feltöltőnek <span>(nem kötelező)</span><textarea name="note" maxlength="1000" rows="3" placeholder="Mit küldjön ide?"></textarea></label>
+            <div class="invitation-form-grid">
+              <label>Meddig lehessen feltölteni?<select name="inviteExpiration"><option value="15m">15 perc</option><option value="1h" selected>1 óra</option><option value="24h">24 óra</option><option value="7d">7 nap</option></select></label>
+              <label>Meddig maradjon meg utána?<select name="shareExpiration">@for (option of expirationOptions; track option.value) { <option [value]="option.value" [selected]="option.value === '1h'">{{ option.label }}</option> }</select></label>
+              <label>Meghívó teljes méretkerete<select name="maxTotalBytes"><option value="104857600">100 MB</option><option value="1073741824" selected>1 GB</option><option value="5368709120">5 GB</option><option value="26843545600">25 GB</option><option value="107374182400">100 GB</option></select></label>
+            </div>
+            <fieldset><legend>A lezárt megosztás láthatósága</legend><label><input type="radio" name="visibility" value="shared" checked /> Közös – minden belépett családtag látja</label><label><input type="radio" name="visibility" value="code" /> Privát – csak a kóddal érhető el</label></fieldset>
+            <button type="submit" class="invite-primary">Meghívó létrehozása</button>
+          </form>
+
+          @if (createdInvitation(); as invitation) {
+            <section class="invitation-result" aria-label="Elkészült meghívó">
+              <p class="result-kicker">Küldhető</p><h3>{{ invitation.title || 'Új feltöltési meghívó' }}</h3>
+              <strong class="invitation-code">{{ invitation.code }}</strong>
+              <div class="dialog-actions"><button type="button" class="share-tools-button" (click)="copyInvitationCode(invitation)">Kód másolása</button><button type="button" class="copy-link" (click)="copyInvitationLink(invitation)">Link másolása</button></div>
+              @if (invitationQrCode()) { <img [src]="invitationQrCode()" alt="A feltöltési meghívó QR-kódja" /> }
+              <small>Nyitva eddig: {{ formatDateTime(invitation.expiresAtUtc) }}</small>
+            </section>
+          } @else {
+            <aside class="invitation-explainer"><strong>A link birtoklása nem ad hozzáférést a szerverhez.</strong><p>A vendég csak feltölteni tud, és kizárólag az ugyanebből a böngészőből küldött ideiglenes fájlokat kezelheti. A normál megosztás csak akkor készül el, amikor te lezárod a meghívót.</p></aside>
+          }
+        </div>
+
+        <section class="invitation-list-panel">
+          <div class="section-heading"><div><h3>Meghívóim</h3><p>A nyitott meghívók és a beérkezett fájlok.</p></div></div>
+          @if (invitationsState() === 'loading') { <p class="storage-message">Meghívók betöltése…</p> }
+          @else if (invitationsState() === 'error') { <p class="storage-message error">A meghívók most nem tölthetők be.</p> }
+          @else if (invitations().length) {
+            <div class="invitation-list">
+              @for (invitation of invitations(); track invitation.id) {
+                <article class="invitation-row" [class.inactive]="invitation.state !== 'open'">
+                  <div class="invitation-row-top"><div><span class="invite-state" [class.open]="invitation.state === 'open'">{{ invitationStateLabel(invitation.state) }}</span><h4>{{ invitation.title || 'Névtelen meghívó' }}</h4><p><strong>{{ invitation.code }}</strong> · {{ formatDateTime(invitation.expiresAtUtc) }} · {{ invitation.uploads.length }} fájl · {{ formatSize(invitation.maxTotalBytes) }} keret</p></div>
+                    @if (invitation.state === 'open') { <div class="invitation-actions"><button type="button" class="text-button" (click)="copyInvitationLink(invitation)">Link másolása</button><button type="button" class="danger-button" (click)="revokeInvitation(invitation)">Visszavonás</button></div> }
+                  </div>
+                  @if (invitation.uploads.length) {
+                    <div class="invite-file-list owner-invite-files">
+                      @for (upload of invitation.uploads; track upload.id) { <div><span><strong>{{ upload.fileName }}</strong><small>{{ formatSize(upload.sizeBytes) }} · Feltöltő {{ upload.uploaderOrdinal }}</small></span>@if (invitation.state === 'open') { <button type="button" class="danger-button" (click)="deleteInvitationUpload(invitation, upload)">Törlés</button> }</div> }
+                    </div>
+                  }
+                  @if (invitation.state === 'open') { <button type="button" class="invite-primary close-invite" [disabled]="!invitation.uploads.length" (click)="closeInvitation(invitation)">Átvettem, meghívó lezárása</button> }
+                </article>
+              }
+            </div>
+          } @else { <p class="empty-invite-copy">Még nincs feltöltési meghívód.</p> }
+        </section>
+      </section>
+    } @else if (activeView() === 'upload') {
     <div class="task-page upload-page">
       @if (accountStatus()?.account) {
       <section class="upload-panel" aria-labelledby="upload-heading">
@@ -484,3 +586,4 @@
     <footer class="page-footer"><span>FileDrop</span><span>Egyszerű fájlátadás az otthoni hálózaton.</span></footer>
   </main>
 </div>
+}

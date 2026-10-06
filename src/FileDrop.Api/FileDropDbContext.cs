@@ -5,6 +5,9 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
     public DbSet<SharedFile> SharedFiles => Set<SharedFile>();
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<UploadInvitation> UploadInvitations => Set<UploadInvitation>();
+    public DbSet<InvitationUploaderSession> InvitationUploaderSessions => Set<InvitationUploaderSession>();
+    public DbSet<InvitationUpload> InvitationUploads => Set<InvitationUpload>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +43,35 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
 
         share.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
         share.HasOne(item => item.ParentShare).WithMany(item => item.CollectionFiles).HasForeignKey(item => item.ParentShareId).OnDelete(DeleteBehavior.Restrict);
+
+        var invitation = modelBuilder.Entity<UploadInvitation>();
+        invitation.HasKey(item => item.Id);
+        invitation.Property(item => item.Code).HasMaxLength(8);
+        invitation.Property(item => item.Visibility).HasMaxLength(20);
+        invitation.Property(item => item.ShareExpiration).HasMaxLength(20);
+        invitation.Property(item => item.Title).HasMaxLength(120);
+        invitation.Property(item => item.Note).HasMaxLength(1000);
+        invitation.HasIndex(item => item.Code).IsUnique();
+        invitation.HasIndex(item => item.ExpiresAtUtc);
+        invitation.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
+        invitation.HasOne(item => item.FinalShare).WithMany().HasForeignKey(item => item.FinalShareId).OnDelete(DeleteBehavior.SetNull);
+
+        var uploaderSession = modelBuilder.Entity<InvitationUploaderSession>();
+        uploaderSession.HasKey(item => item.Id);
+        uploaderSession.Property(item => item.TokenHash).HasMaxLength(64);
+        uploaderSession.HasIndex(item => item.TokenHash).IsUnique();
+        uploaderSession.HasIndex(item => item.ExpiresAtUtc);
+        uploaderSession.HasOne(item => item.Invitation).WithMany(item => item.UploaderSessions).HasForeignKey(item => item.InvitationId).OnDelete(DeleteBehavior.Cascade);
+
+        var invitationUpload = modelBuilder.Entity<InvitationUpload>();
+        invitationUpload.HasKey(item => item.Id);
+        invitationUpload.Property(item => item.OriginalFileName).HasMaxLength(255);
+        invitationUpload.Property(item => item.StoredFileName).HasMaxLength(80);
+        invitationUpload.Property(item => item.ContentType).HasMaxLength(200);
+        invitationUpload.HasIndex(item => item.InvitationId);
+        invitationUpload.HasIndex(item => item.UploaderSessionId);
+        invitationUpload.HasOne(item => item.Invitation).WithMany(item => item.Uploads).HasForeignKey(item => item.InvitationId).OnDelete(DeleteBehavior.Cascade);
+        invitationUpload.HasOne(item => item.UploaderSession).WithMany(item => item.Uploads).HasForeignKey(item => item.UploaderSessionId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -89,4 +121,51 @@ public sealed class UserSession
     public required string DeviceName { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime ExpiresAtUtc { get; set; }
+}
+
+public sealed class UploadInvitation
+{
+    public Guid Id { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public AppUser? Owner { get; set; }
+    public required string Code { get; set; }
+    public required string Visibility { get; set; }
+    public required string ShareExpiration { get; set; }
+    public string? Title { get; set; }
+    public string? Note { get; set; }
+    public long MaxTotalBytes { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? ClosedAtUtc { get; set; }
+    public DateTime? RevokedAtUtc { get; set; }
+    public Guid? FinalShareId { get; set; }
+    public SharedFile? FinalShare { get; set; }
+    public List<InvitationUploaderSession> UploaderSessions { get; } = [];
+    public List<InvitationUpload> Uploads { get; } = [];
+}
+
+public sealed class InvitationUploaderSession
+{
+    public Guid Id { get; set; }
+    public Guid InvitationId { get; set; }
+    public UploadInvitation? Invitation { get; set; }
+    public required string TokenHash { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime LastSeenAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public List<InvitationUpload> Uploads { get; } = [];
+}
+
+public sealed class InvitationUpload
+{
+    public Guid Id { get; set; }
+    public Guid InvitationId { get; set; }
+    public UploadInvitation? Invitation { get; set; }
+    public Guid UploaderSessionId { get; set; }
+    public InvitationUploaderSession? UploaderSession { get; set; }
+    public required string OriginalFileName { get; set; }
+    public required string StoredFileName { get; set; }
+    public required string ContentType { get; set; }
+    public long SizeBytes { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
 }

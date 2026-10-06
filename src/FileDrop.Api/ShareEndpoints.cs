@@ -842,7 +842,7 @@ public static class ShareEndpoints
         return await DownloadAsync(share.Id, context, db, sessions, storage, scopeFactory, cancellationToken, allowAnonymousCode: true);
     }
 
-    private static ShareDto ToDto(SharedFile file, bool codeDownload = false) => new(
+    internal static ShareDto ToDto(SharedFile file, bool codeDownload = false) => new(
         file.Id,
         file.OriginalFileName,
         file.Title,

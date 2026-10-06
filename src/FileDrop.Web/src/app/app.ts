@@ -5,7 +5,7 @@ import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import * as QRCode from 'qrcode';
 import { NativeSharedFile, ShareReceiver } from './share-receiver';
 
-type ViewName = 'download' | 'upload' | 'mine' | 'settings';
+type ViewName = 'download' | 'upload' | 'invites' | 'mine' | 'settings';
 type Visibility = 'shared' | 'code';
 type UploadMode = 'collection' | 'separate';
 
@@ -94,6 +94,40 @@ interface SessionInfo {
   isCurrent: boolean;
 }
 
+interface InvitationUpload {
+  id: string;
+  fileName: string;
+  sizeBytes: number;
+  createdAtUtc: string;
+  uploaderOrdinal: number | null;
+}
+
+interface OwnerInvitation {
+  id: string;
+  code: string;
+  visibility: Visibility;
+  shareExpiration: string;
+  title: string | null;
+  note: string | null;
+  maxTotalBytes: number;
+  ownerDisplayName: string | null;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  state: 'open' | 'closed' | 'expired' | 'revoked';
+  finalShareId: string | null;
+  uploads: InvitationUpload[];
+}
+
+interface PublicInvitation {
+  code: string;
+  title: string | null;
+  note: string | null;
+  ownerDisplayName: string | null;
+  expiresAtUtc: string;
+  maxTotalBytes: number;
+  uploads: InvitationUpload[];
+}
+
 interface DroppedEntry {
   isFile: boolean;
   isDirectory: boolean;
@@ -162,6 +196,15 @@ export class App implements OnInit, OnDestroy {
   protected readonly ownSessions = signal<SessionInfo[]>([]);
   protected readonly ownSessionsState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   protected readonly accountBusy = signal(false);
+  protected readonly publicInviteCode = signal(this.readInviteCodeFromPath());
+  protected readonly publicInvitation = signal<PublicInvitation | null>(null);
+  protected readonly publicInviteState = signal<'loading' | 'ready' | 'error'>('loading');
+  protected readonly publicInviteFiles = signal<File[]>([]);
+  protected readonly publicInviteUploading = signal(false);
+  protected readonly invitations = signal<OwnerInvitation[]>([]);
+  protected readonly invitationsState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  protected readonly createdInvitation = signal<OwnerInvitation | null>(null);
+  protected readonly invitationQrCode = signal('');
 
   protected readonly expirationOptions = [
     { value: 'after-download', label: 'Első sikeres letöltés után' },
@@ -177,6 +220,13 @@ export class App implements OnInit, OnDestroy {
       next: (result) => this.apiStatus.set(result.status === 'ok' ? 'online' : 'offline'),
       error: () => this.apiStatus.set('offline'),
     });
+    if (this.publicInviteCode()) {
+      this.loadPublicInvitation();
+      this.refreshTimer = window.setInterval(() => this.refreshLiveData(), 5000);
+      window.addEventListener('focus', this.refreshWhenVisible);
+      document.addEventListener('visibilitychange', this.refreshWhenVisible);
+      return;
+    }
     this.loadStorage();
     this.loadAppRelease();
     this.loadAccount();
@@ -203,6 +253,119 @@ export class App implements OnInit, OnDestroy {
     if (view === 'mine' && this.accountStatus()?.account) this.loadOwnSessions();
     if (view === 'settings' && this.accountStatus()?.account?.isAdmin) this.loadAdminUsers();
     if (view === 'settings' && this.accountStatus()?.account) this.loadOwnSessions();
+    if (view === 'invites' && this.accountStatus()?.account) this.loadInvitations();
+  }
+
+  protected createInvitation(event: SubmitEvent): void {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const values = new FormData(form);
+    this.http.post<OwnerInvitation>('/api/invitations', {
+      visibility: values.get('visibility'),
+      inviteExpiration: values.get('inviteExpiration'),
+      shareExpiration: values.get('shareExpiration'),
+      title: values.get('title'),
+      note: values.get('note'),
+      maxTotalBytes: Number(values.get('maxTotalBytes')),
+    }).subscribe({
+      next: invitation => {
+        this.createdInvitation.set(invitation);
+        void this.createInvitationQr(invitation);
+        this.notice.set('A feltöltési meghívó elkészült.');
+        form.reset();
+        this.loadInvitations(true);
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A meghívó létrehozása nem sikerült.')),
+    });
+  }
+
+  protected closeInvitation(invitation: OwnerInvitation): void {
+    if (!invitation.uploads.length || !confirm('Minden beérkezett fájlból normál megosztás készül, és több fájl már nem tölthető fel. Lezárod?')) return;
+    this.http.post<Share>(`/api/invitations/${invitation.id}/close`, {}).subscribe({
+      next: share => {
+        this.notice.set('A meghívót lezártuk, a megosztás elkészült.');
+        this.createdShare.set(share);
+        this.restoreShareTools(share);
+        this.loadInvitations(true);
+        this.loadSharedFiles(true);
+        this.loadOwnedShares(true);
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A meghívó lezárása nem sikerült.')),
+    });
+  }
+
+  protected revokeInvitation(invitation: OwnerInvitation): void {
+    if (!confirm('A meghívó azonnal megszűnik, és az ideiglenesen feltöltött fájlok végleg törlődnek. Folytatod?')) return;
+    this.http.delete(`/api/invitations/${invitation.id}`).subscribe({
+      next: () => { this.notice.set('A meghívót visszavontuk.'); this.loadInvitations(true); this.loadStorage(true); },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A meghívó visszavonása nem sikerült.')),
+    });
+  }
+
+  protected deleteInvitationUpload(invitation: OwnerInvitation, upload: InvitationUpload): void {
+    if (!confirm(`Törlöd ezt a beérkezett fájlt: ${upload.fileName}?`)) return;
+    this.http.delete(`/api/invitations/${invitation.id}/uploads/${upload.id}`).subscribe({
+      next: () => { this.loadInvitations(true); this.loadStorage(true); },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A fájl törlése nem sikerült.')),
+    });
+  }
+
+  protected selectPublicInviteFiles(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const current = [...this.publicInviteFiles(), ...Array.from(input.files ?? [])];
+    const seen = new Set<string>();
+    this.publicInviteFiles.set(current.filter(file => {
+      const key = this.fileIdentity(file);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }));
+    input.value = '';
+  }
+
+  protected removePublicInviteFile(index: number): void {
+    this.publicInviteFiles.update(files => files.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  protected uploadToInvitation(): void {
+    const code = this.publicInviteCode();
+    const files = this.publicInviteFiles();
+    if (!code || !files.length || this.publicInviteUploading()) return;
+    const form = new FormData();
+    for (const file of files) form.append('files', file, file.name);
+    this.publicInviteUploading.set(true);
+    this.http.post<InvitationUpload[]>(`/api/public/invitations/${encodeURIComponent(code)}/uploads`, form).subscribe({
+      next: () => {
+        this.publicInviteFiles.set([]);
+        this.notice.set('A fájlok megérkeztek. A meghívó lezárásáig még törölheted vagy pótolhatod őket.');
+        this.loadPublicInvitation();
+      },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A feltöltés nem sikerült.')),
+      complete: () => this.publicInviteUploading.set(false),
+    });
+  }
+
+  protected deleteOwnInvitationUpload(upload: InvitationUpload): void {
+    const code = this.publicInviteCode();
+    if (!code || !confirm(`Törlöd ezt a fájlt: ${upload.fileName}?`)) return;
+    this.http.delete(`/api/public/invitations/${encodeURIComponent(code)}/uploads/${upload.id}`).subscribe({
+      next: () => { this.notice.set('A saját fájlodat töröltük.'); this.loadPublicInvitation(); },
+      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A fájl nem törölhető.')),
+    });
+  }
+
+  protected async copyInvitationLink(invitation: OwnerInvitation): Promise<void> {
+    await this.copyText(this.getInvitationLink(invitation));
+    this.notice.set('A feltöltési linket a vágólapra másoltuk.');
+  }
+
+  protected async copyInvitationCode(invitation: OwnerInvitation): Promise<void> {
+    await this.copyText(invitation.code);
+    this.notice.set('A meghívókódot a vágólapra másoltuk.');
+  }
+
+  protected invitationStateLabel(state: OwnerInvitation['state']): string {
+    return state === 'open' ? 'Nyitott' : state === 'closed' ? 'Lezárt' : state === 'expired' ? 'Lejárt' : 'Visszavont';
   }
 
   protected submitSetup(event: SubmitEvent): void {
@@ -894,6 +1057,13 @@ export class App implements OnInit, OnDestroy {
     }).format(new Date(normalized));
   }
 
+  protected formatDateTime(timestamp: string): string {
+    const normalized = timestamp.endsWith('Z') ? timestamp : `${timestamp}Z`;
+    return new Intl.DateTimeFormat('hu-HU', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    }).format(new Date(normalized));
+  }
+
   private setSelectedFiles(files: File[]): void {
     this.nativeSharedFiles.set([]);
     if (Capacitor.isNativePlatform()) void ShareReceiver.clearPendingFiles();
@@ -1033,10 +1203,75 @@ export class App implements OnInit, OnDestroy {
   }
 
   private refreshLiveData(): void {
+    if (this.publicInviteCode()) {
+      if (document.visibilityState === 'visible') this.loadPublicInvitation(true);
+      return;
+    }
     if (document.visibilityState !== 'visible' || !this.accountStatus()?.account) return;
     this.loadSharedFiles(true);
     this.loadOwnedShares(true);
     if (this.activeView() === 'upload') this.loadStorage(true);
+    if (this.activeView() === 'invites') this.loadInvitations(true);
+  }
+
+  private loadInvitations(silent = false): void {
+    if (!silent) this.invitationsState.set('loading');
+    this.http.get<OwnerInvitation[]>('/api/invitations').subscribe({
+      next: invitations => {
+        this.invitations.set(invitations);
+        this.invitationsState.set('ready');
+      },
+      error: () => { if (!silent) this.invitationsState.set('error'); },
+    });
+  }
+
+  private loadPublicInvitation(silent = false): void {
+    const code = this.publicInviteCode();
+    if (!code) return;
+    if (!silent) this.publicInviteState.set('loading');
+    this.http.get<PublicInvitation>(`/api/public/invitations/${encodeURIComponent(code)}`).subscribe({
+      next: invitation => {
+        this.publicInvitation.set(invitation);
+        this.publicInviteState.set('ready');
+      },
+      error: (error: HttpErrorResponse) => {
+        this.publicInvitation.set(null);
+        this.publicInviteState.set('error');
+        if (!silent) this.notice.set(this.readError(error, 'A feltöltési meghívó nem használható.'));
+      },
+    });
+  }
+
+  private readInviteCodeFromPath(): string | null {
+    const match = window.location.pathname.match(/^\/u\/([A-Za-z0-9-]+)\/?$/);
+    if (!match) return null;
+    const compact = match[1].replace(/-/g, '').toUpperCase();
+    return /^[A-Z0-9]{8}$/.test(compact) ? compact : null;
+  }
+
+  private getInvitationLink(invitation: OwnerInvitation): string {
+    return new URL(`/u/${encodeURIComponent(invitation.code)}`, window.location.origin).toString();
+  }
+
+  private async createInvitationQr(invitation: OwnerInvitation): Promise<void> {
+    this.invitationQrCode.set(await QRCode.toDataURL(this.getInvitationLink(invitation), {
+      errorCorrectionLevel: 'M', margin: 2, width: 220, color: { dark: '#172b3a', light: '#ffffff' },
+    }));
+  }
+
+  private async copyText(value: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const input = document.createElement('textarea');
+      input.value = value;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
   }
 
   private loadAdminUsers(): void {
