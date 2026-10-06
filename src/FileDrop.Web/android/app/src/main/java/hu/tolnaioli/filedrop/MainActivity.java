@@ -9,7 +9,7 @@ import java.net.URL;
 
 public class MainActivity extends BridgeActivity {
     private static final String LAN_SERVER_URL = "http://192.168.0.34:8090";
-    private static final String TAILSCALE_SERVER_URL = "https://dell-server.tailbbb228.ts.net";
+    private static final String TAILSCALE_SERVER_URL = "https://filedrop-tailscale.tailbbb228.ts.net";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -33,7 +33,7 @@ public class MainActivity extends BridgeActivity {
             .setServerUrl(serverUrl)
             .setAllowNavigation(new String[] {
                 "192.168.0.34",
-                "dell-server.tailbbb228.ts.net"
+                "filedrop-tailscale.tailbbb228.ts.net"
             })
             .create();
 
