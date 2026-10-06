@@ -160,13 +160,13 @@
         </div>
 
         <section class="invitation-list-panel">
-          <div class="section-heading"><div><h3>Meghívóim</h3><p>A nyitott meghívók és a beérkezett fájlok.</p></div></div>
+          <div class="section-heading"><div><h3>Aktív meghívók</h3><p>Csak a még használható feltöltési meghívók jelennek meg.</p></div></div>
           @if (invitationsState() === 'loading') { <p class="storage-message">Meghívók betöltése…</p> }
           @else if (invitationsState() === 'error') { <p class="storage-message error">A meghívók most nem tölthetők be.</p> }
           @else if (invitations().length) {
             <div class="invitation-list">
               @for (invitation of invitations(); track invitation.id) {
-                <article class="invitation-row" [class.inactive]="invitation.state !== 'open'">
+                <article class="invitation-row">
                   <div class="invitation-row-top"><div><span class="invite-state" [class.open]="invitation.state === 'open'">{{ invitationStateLabel(invitation.state) }}</span><h4>{{ invitation.title || 'Névtelen meghívó' }}</h4><p><strong>{{ invitation.code }}</strong> · {{ formatDateTime(invitation.expiresAtUtc) }} · {{ invitation.uploads.length }} fájl · {{ formatSize(invitation.maxTotalBytes) }} keret</p></div>
                     @if (invitation.state === 'open') { <div class="invitation-actions"><button type="button" class="text-button" (click)="copyInvitationLink(invitation)">Link másolása</button><button type="button" class="danger-button" (click)="revokeInvitation(invitation)">Visszavonás</button></div> }
                   </div>
@@ -179,7 +179,7 @@
                 </article>
               }
             </div>
-          } @else { <p class="empty-invite-copy">Még nincs feltöltési meghívód.</p> }
+          } @else { <p class="empty-invite-copy">Nincs aktív feltöltési meghívód.</p> }
         </section>
       </section>
     } @else if (activeView() === 'upload') {

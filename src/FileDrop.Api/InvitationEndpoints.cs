@@ -149,11 +149,15 @@ public static class InvitationEndpoints
     {
         var owner = await accounts.GetCurrentAsync(context, db, cancellationToken);
         if (owner is null) return Results.Unauthorized();
+        var now = DateTime.UtcNow;
         var invitations = await db.UploadInvitations.AsNoTracking()
             .Include(item => item.Owner)
             .Include(item => item.Uploads)
             .ThenInclude(item => item.UploaderSession)
-            .Where(item => item.OwnerUserId == owner.Id)
+            .Where(item => item.OwnerUserId == owner.Id
+                && item.ClosedAtUtc == null
+                && item.RevokedAtUtc == null
+                && item.ExpiresAtUtc > now)
             .OrderByDescending(item => item.CreatedAtUtc)
             .ToListAsync(cancellationToken);
         return Results.Ok(invitations.Select(invitation => ToOwnerDto(invitation, options.Value.PublicBaseUrl)));

@@ -286,6 +286,8 @@ export class App implements OnInit, OnDestroy {
     this.http.post<Share>(`/api/invitations/${invitation.id}/close`, {}).subscribe({
       next: share => {
         this.notice.set('A meghívót lezártuk, a megosztás elkészült.');
+        this.createdInvitation.set(null);
+        this.invitationQrCode.set('');
         this.createdShare.set(share);
         this.restoreShareTools(share);
         this.loadInvitations(true);
@@ -299,7 +301,7 @@ export class App implements OnInit, OnDestroy {
   protected revokeInvitation(invitation: OwnerInvitation): void {
     if (!confirm('A meghívó azonnal megszűnik, és az ideiglenesen feltöltött fájlok végleg törlődnek. Folytatod?')) return;
     this.http.delete(`/api/invitations/${invitation.id}`).subscribe({
-      next: () => { this.notice.set('A meghívót visszavontuk.'); this.loadInvitations(true); this.loadStorage(true); },
+      next: () => { this.notice.set('A meghívót visszavontuk.'); this.createdInvitation.set(null); this.invitationQrCode.set(''); this.loadInvitations(true); this.loadStorage(true); },
       error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A meghívó visszavonása nem sikerült.')),
     });
   }
