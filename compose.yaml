@@ -26,3 +26,25 @@ services:
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
+
+  # Külön Tailscale-eszköz a FileDrophoz. A network_mode miatt ez a konténer
+  # csak a FileDrop konténer hálózati névterét használja, nem a Dell hostét.
+  filedrop-tailscale:
+    image: tailscale/tailscale:latest
+    container_name: filedrop-tailscale
+    hostname: filedrop-tailscale
+    network_mode: service:filedrop
+    depends_on:
+      filedrop:
+        condition: service_started
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: "${FILEDROP_TS_AUTHKEY:?A FILEDROP_TS_AUTHKEY nincs beállítva}"
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: filedrop-tailscale
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /serve-config/serve.json
+      TS_USERSPACE: "true"
+    volumes:
+      - /srv/filedrop/tailscale-state:/var/lib/tailscale
+      - ./tailscale-config:/serve-config:ro
