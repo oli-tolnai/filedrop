@@ -118,6 +118,39 @@ A Compose alapértelmezetten a Dell LAN-címén publikál: `192.168.0.34:8090`. 
 
 Az éles `.env` fájl nem kerül verziókezelésbe. A konténer nem rootként fut, a saját rendszerfájlrendszere csak olvasható, minden capability el van dobva, és kizárólag `/srv/filedrop/data` írható számára.
 
+## Nyilvános feltöltési meghívó
+
+A nyilvános Cloudflare Tunnel nem közvetlenül a FileDrop alkalmazáshoz csatlakozik.
+A `filedrop-public-gateway` egy külön, csak a Dell loopback címére publikált Nginx
+átjáró. Kizárólag az alábbiakat engedi tovább:
+
+- a `/u/XXXX-XXXX` meghívóoldalt és annak hash-elt JavaScript/CSS fájljait;
+- az adott meghívó lekérdezését;
+- vendégfájl feltöltését és a feltöltő saját ideiglenes fájljának törlését.
+
+A kezdőlap, bejelentkezés, fiókok, megosztások, letöltések és adminisztráció ezen
+az átjárón mindig `404` választ adnak. A Tunnel konténer kifelé épít kapcsolatot,
+ezért routerportot nem kell nyitni. A Tunnel token titok: kizárólag a Dell
+`root:root`, `600` jogosultságú `.env` fájljába kerülhet.
+
+A nyilvános profil helyi kapuja a `127.0.0.1:8092` címen ellenőrizhető:
+
+```bash
+sudo docker compose --profile public up -d filedrop-public-gateway
+curl -fsS http://127.0.0.1:8092/public-health
+curl -o /dev/null -s -w '%{http_code}\n' http://127.0.0.1:8092/
+```
+
+Az első parancsnak egészséges konténert, a másodiknak `{"status":"ok"}` választ,
+a harmadiknak `404` állapotot kell adnia. A `filedrop-public-cloudflared` csak a
+valódi `FILEDROP_CF_TUNNEL_TOKEN` beállítása után indítható el.
+
+Cloudflare Free és Pro csomagban egy HTTP-kérés legfeljebb 100 MB lehet. A
+meghívóoldal ezért a kijelölt fájlokat külön kérésekben küldi: több kisebb fájl
+együtt lehet nagyobb 100 MB-nál, de egyetlen 100 MB feletti fájl nyilvános
+feltöltéséhez később darabolt feltöltés szükséges. LAN-on és Tailscale-en ez a
+Cloudflare-korlát nem érvényes.
+
 ## Biztonsági határ
 
 A mostani LAN-változat HTTP-t használ. Ez családi, megbízható hálózaton kényelmes, de a bejelentkezési forgalom nincs titkosítva, ezért nyilvános Wi-Fi-re vagy internetre nem szabad így kitenni. Tailscale-es távoli használat előtt HTTPS-t és szűk Tailscale-hozzáférést állítunk be; publikus idegennek csak külön, lejáró letöltési/feltöltési végpont készülhet.
@@ -136,7 +169,7 @@ A mostani LAN-változat HTTP-t használ. Ez családi, megbízható hálózaton k
 
 ## Következő lépések
 
-1. Az aláírt APK és a manifest telepítése a Dellre, majd helyi telefonos/laptopos próba.
-2. Mentési és próba-visszaállítási eljárás.
-3. Helyi DNS-név, HTTPS és külön Tailscale-hozzáférés.
-4. A feltöltési meghívó szűk Cloudflare Tunnel útvonala és nyilvános biztonsági próba. A Tunnel csak a `/u/...` oldalt és a hozzá tartozó publikus API-t engedheti át.
+1. A nyilvános átjáró telepítése a Dellre és a tiltott útvonalak helyi ellenőrzése.
+2. A külön Cloudflare Tunnel létrehozása, a token titkos szerveroldali beállítása és a publikus hosztnév csatlakoztatása az átjáróhoz.
+3. Külső hálózatról lejárat-, visszavonás-, többküldős és jogosultsági próba.
+4. Biztonsági és terhelési ellenőrzés, majd végleges dokumentáció.

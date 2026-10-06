@@ -8,6 +8,7 @@ public sealed class FileDropOptions
     public string DatabasePath { get; init; } = "data/filedrop.db";
     public long ReservedFreeSpaceBytes { get; init; } = 100L * 1024 * 1024 * 1024;
     public string SetupToken { get; init; } = "";
+    public string PublicBaseUrl { get; init; } = "";
 }
 
 public sealed record StorageStatus(

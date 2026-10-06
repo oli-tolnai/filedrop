@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 public sealed class InvitationUploaderSessionService
@@ -48,7 +49,8 @@ public sealed class InvitationUploaderSessionService
             HttpOnly = true,
             IsEssential = true,
             SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict,
-            Secure = context.Request.IsHttps,
+            Secure = context.Request.IsHttps
+                || context.Request.Headers["X-Forwarded-Proto"].Any(value => string.Equals(value, "https", StringComparison.OrdinalIgnoreCase)),
             Expires = cookieExpiresAtUtc,
             Path = "/",
         });
@@ -97,6 +99,7 @@ public static class InvitationEndpoints
         HttpContext context,
         FileDropDbContext db,
         AccountSessionService accounts,
+        IOptions<FileDropOptions> options,
         CancellationToken cancellationToken)
     {
         var owner = await accounts.GetCurrentAsync(context, db, cancellationToken);
@@ -132,7 +135,7 @@ public static class InvitationEndpoints
             db.UploadInvitations.Add(invitation);
             await db.SaveChangesAsync(cancellationToken);
             invitation.Owner = await db.Users.AsNoTracking().FirstAsync(item => item.Id == owner.Id, cancellationToken);
-            return Results.Created($"/api/invitations/{invitation.Id}", ToOwnerDto(invitation));
+            return Results.Created($"/api/invitations/{invitation.Id}", ToOwnerDto(invitation, options.Value.PublicBaseUrl));
         }
         finally { CodeGate.Release(); }
     }
@@ -141,6 +144,7 @@ public static class InvitationEndpoints
         HttpContext context,
         FileDropDbContext db,
         AccountSessionService accounts,
+        IOptions<FileDropOptions> options,
         CancellationToken cancellationToken)
     {
         var owner = await accounts.GetCurrentAsync(context, db, cancellationToken);
@@ -152,7 +156,7 @@ public static class InvitationEndpoints
             .Where(item => item.OwnerUserId == owner.Id)
             .OrderByDescending(item => item.CreatedAtUtc)
             .ToListAsync(cancellationToken);
-        return Results.Ok(invitations.Select(ToOwnerDto));
+        return Results.Ok(invitations.Select(invitation => ToOwnerDto(invitation, options.Value.PublicBaseUrl)));
     }
 
     private static async Task<IResult> OpenPublicAsync(
@@ -429,13 +433,20 @@ public static class InvitationEndpoints
             cancellationToken);
     }
 
-    private static OwnerInvitationDto ToOwnerDto(UploadInvitation invitation)
+    private static OwnerInvitationDto ToOwnerDto(UploadInvitation invitation, string? publicBaseUrl)
     {
         var sessionOrdinals = invitation.Uploads.Select(item => item.UploaderSessionId).Distinct().Select((id, index) => (id, index)).ToDictionary(item => item.id, item => item.index + 1);
         var state = invitation.RevokedAtUtc is not null ? "revoked" : invitation.ClosedAtUtc is not null ? "closed" : invitation.ExpiresAtUtc <= DateTime.UtcNow ? "expired" : "open";
         return new OwnerInvitationDto(invitation.Id, FormatCode(invitation.Code), invitation.Visibility, invitation.ShareExpiration, invitation.Title, invitation.Note, invitation.MaxTotalBytes,
-            invitation.Owner?.DisplayName, invitation.CreatedAtUtc, invitation.ExpiresAtUtc, state, invitation.FinalShareId,
+            invitation.Owner?.DisplayName, invitation.CreatedAtUtc, invitation.ExpiresAtUtc, state, invitation.FinalShareId, BuildPublicUrl(publicBaseUrl, invitation.Code),
             invitation.Uploads.OrderBy(item => item.CreatedAtUtc).Select(item => ToUploadDto(item, sessionOrdinals[item.UploaderSessionId])).ToList());
+    }
+
+    private static string? BuildPublicUrl(string? publicBaseUrl, string code)
+    {
+        if (!Uri.TryCreate(publicBaseUrl?.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var baseUri)
+            || !string.Equals(baseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return null;
+        return new Uri(baseUri, $"u/{FormatCode(code)}").ToString();
     }
 
     private static PublicInvitationDto ToPublicDto(UploadInvitation invitation, IReadOnlyList<InvitationUploadDto> uploads) =>
@@ -521,4 +532,4 @@ public static class InvitationEndpoints
 public sealed record CreateInvitationRequest(string? Visibility, string? InviteExpiration, string? ShareExpiration, string? Title, string? Note, long? MaxTotalBytes);
 public sealed record InvitationUploadDto(Guid Id, string FileName, long SizeBytes, DateTime CreatedAtUtc, int? UploaderOrdinal);
 public sealed record PublicInvitationDto(string Code, string? Title, string? Note, string? OwnerDisplayName, DateTime ExpiresAtUtc, long MaxTotalBytes, IReadOnlyList<InvitationUploadDto> Uploads);
-public sealed record OwnerInvitationDto(Guid Id, string Code, string Visibility, string ShareExpiration, string? Title, string? Note, long MaxTotalBytes, string? OwnerDisplayName, DateTime CreatedAtUtc, DateTime ExpiresAtUtc, string State, Guid? FinalShareId, IReadOnlyList<InvitationUploadDto> Uploads);
+public sealed record OwnerInvitationDto(Guid Id, string Code, string Visibility, string ShareExpiration, string? Title, string? Note, long MaxTotalBytes, string? OwnerDisplayName, DateTime CreatedAtUtc, DateTime ExpiresAtUtc, string State, Guid? FinalShareId, string? PublicUrl, IReadOnlyList<InvitationUploadDto> Uploads);

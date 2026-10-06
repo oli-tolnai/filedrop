@@ -52,6 +52,8 @@ Két azonos módon védett felhasználási eset tartozik ide:
 - A tulajdonos lezárásakor a beérkezett fájlok normál FileDrop-megosztássá válnak: egy közös hatkarakteres letöltési kódot, linket és QR-kódot kapnak, megjelennek a létrehozó saját megosztásai között, és a kiválasztott láthatóságot és feltöltés utáni lejáratot használják.
 - A nyilvános oldalon nincs fájllista, bejelentkezés, letöltés, adminfelület vagy általános feltöltés; csak az adott meghívó használható.
 - Cloudflare Tunnel kizárólag ezt a szűk nyilvános végpontot teszi elérhetővé. A fő FileDrop felület LAN/Tailscale mögött marad.
+- A Tunnel előtt külön, minimális Nginx átjáró engedi csak a meghívóoldalt és a hozzá tartozó három publikus API-műveletet; minden más útvonal `404`.
+- Cloudflare Free/Pro használatakor egy kérés 100 MB-os korlátja miatt a kliens fájlonként külön kérést küld. Több kisebb fájl összesen lehet nagyobb, de egyetlen 100 MB feletti fájlhoz darabolt feltöltés szükséges.
 - Szükséges sebesség- és próbálkozáskorlát, tárhelyellenőrzés, fájlnév-tisztítás, naplózás és a sikertelen feltöltések automatikus takarítása.
 - A feltöltött fájl nem tekinthető automatikusan biztonságosnak: megnyitás előtt a tulajdonos látja a forrást, méretet és fájltípust; később vírusellenőrzés is hozzáadható.
 

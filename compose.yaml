@@ -16,6 +16,7 @@ services:
       FileDrop__DatabasePath: /app/data/filedrop.db
       FileDrop__ReservedFreeSpaceBytes: "107374182400"
       FileDrop__SetupToken: "${FILEDROP_SETUP_TOKEN:?A FILEDROP_SETUP_TOKEN nincs beállítva}"
+      FileDrop__PublicBaseUrl: "${FILEDROP_PUBLIC_BASE_URL:-}"
     volumes:
       - /srv/filedrop/data:/app/data
     read_only: true
@@ -47,3 +48,53 @@ services:
     volumes:
       - /srv/filedrop/tailscale-state:/var/lib/tailscale
       - ./tailscale-config:/serve-config:ro
+
+  # Szigorú nyilvános kapu: csak a meghívóoldalt, annak statikus fájljait és
+  # a vendég-feltöltési API-t engedi tovább a FileDrop felé.
+  filedrop-public-gateway:
+    image: nginxinc/nginx-unprivileged:1.31.6-alpine3.24
+    container_name: filedrop-public-gateway
+    profiles: ["public"]
+    depends_on:
+      filedrop:
+        condition: service_started
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FILEDROP_PUBLIC_GATEWAY_PORT:-8092}:8080"
+    volumes:
+      - ./public-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./public-gateway/proxy_params:/etc/nginx/proxy_params:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+      - /var/cache/nginx:size=32m,noexec,nosuid,nodev,uid=101,gid=101,mode=700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/public-health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+  # Külön, távolról kezelt Cloudflare Tunnel. A token kizárólag a Dell
+  # root tulajdonú .env fájljában lehet, Gitbe nem kerülhet.
+  filedrop-public-cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: filedrop-public-cloudflared
+    profiles: ["public"]
+    depends_on:
+      filedrop-public-gateway:
+        condition: service_healthy
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      # Üresen maradhat, amíg csak a helyi kaput teszteljük. A tunnel
+      # konténert kizárólag valódi, titkos tokennel szabad elindítani.
+      TUNNEL_TOKEN: "${FILEDROP_CF_TUNNEL_TOKEN:-}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

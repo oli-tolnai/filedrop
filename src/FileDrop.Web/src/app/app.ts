@@ -3,6 +3,7 @@ import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import * as QRCode from 'qrcode';
+import { firstValueFrom } from 'rxjs';
 import { NativeSharedFile, ShareReceiver } from './share-receiver';
 
 type ViewName = 'download' | 'upload' | 'invites' | 'mine' | 'settings';
@@ -115,6 +116,7 @@ interface OwnerInvitation {
   expiresAtUtc: string;
   state: 'open' | 'closed' | 'expired' | 'revoked';
   finalShareId: string | null;
+  publicUrl: string | null;
   uploads: InvitationUpload[];
 }
 
@@ -352,22 +354,31 @@ export class App implements OnInit, OnDestroy {
     this.publicInviteFiles.update(files => files.filter((_, itemIndex) => itemIndex !== index));
   }
 
-  protected uploadToInvitation(): void {
+  protected async uploadToInvitation(): Promise<void> {
     const code = this.publicInviteCode();
     const files = this.publicInviteFiles();
     if (!code || !files.length || this.publicInviteUploading()) return;
-    const form = new FormData();
-    for (const file of files) form.append('files', file, file.name);
     this.publicInviteUploading.set(true);
-    this.http.post<InvitationUpload[]>(`/api/public/invitations/${encodeURIComponent(code)}/uploads`, form).subscribe({
-      next: () => {
-        this.publicInviteFiles.set([]);
-        this.notice.set('A fájlok felkerültek a szerverre. A meghívó lezárásáig még törölheted vagy pótolhatod őket.');
-        this.loadPublicInvitation();
-      },
-      error: (error: HttpErrorResponse) => this.notice.set(this.readError(error, 'A feltöltés nem sikerült.')),
-      complete: () => this.publicInviteUploading.set(false),
-    });
+    let uploadedCount = 0;
+    try {
+      // A publikus Cloudflare-kapcsolaton egy HTTP-kérés mérete korlátozott.
+      // Ezért a kijelölt fájlokat egymás után, külön kérésekben küldjük el.
+      for (const file of files) {
+        const form = new FormData();
+        form.append('files', file, file.name);
+        await firstValueFrom(this.http.post<InvitationUpload[]>(`/api/public/invitations/${encodeURIComponent(code)}/uploads`, form));
+        uploadedCount += 1;
+        const uploadedIdentity = this.fileIdentity(file);
+        this.publicInviteFiles.update(current => current.filter(item => this.fileIdentity(item) !== uploadedIdentity));
+      }
+      this.notice.set('A fájlok felkerültek a szerverre. A meghívó lezárásáig még törölheted vagy pótolhatod őket.');
+    } catch (error) {
+      const prefix = uploadedCount ? `${uploadedCount} fájl sikeresen felkerült. ` : '';
+      this.notice.set(prefix + this.readError(error as HttpErrorResponse, 'A következő fájl feltöltése nem sikerült.'));
+    } finally {
+      this.publicInviteUploading.set(false);
+      this.loadPublicInvitation(true);
+    }
   }
 
   protected deleteOwnInvitationUpload(upload: InvitationUpload): void {
@@ -1275,7 +1286,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   private getInvitationLink(invitation: OwnerInvitation): string {
-    return new URL(`/u/${encodeURIComponent(invitation.code)}`, window.location.origin).toString();
+    return invitation.publicUrl ?? new URL(`/u/${encodeURIComponent(invitation.code)}`, window.location.origin).toString();
   }
 
   private async createInvitationQr(invitation: OwnerInvitation): Promise<void> {
