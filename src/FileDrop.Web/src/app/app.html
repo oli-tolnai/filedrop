@@ -1,4 +1,34 @@
-@if (publicInviteCode()) {
+@if (publicDownloadCode()) {
+<div class="invite-public-shell public-download-shell">
+  <main class="invite-public-card public-download-card">
+    <div class="brand invite-public-brand" aria-label="FileDrop"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 4.75h10.1L25 11.7v14.55a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="2"/><path d="M18 5v7h7M11 18h10M11 22h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span>FileDrop</span></div>
+    @if (publicDownload(); as download) {
+      <div class="invite-public-heading"><span class="invite-status-dot"></span><span>Ideiglenes publikus megosztás</span></div>
+      <h1>{{ download.title || download.fileName }}</h1>
+      <p><strong>{{ download.ownerDisplayName || 'Egy FileDrop-felhasználó' }}</strong> megosztotta veled ezt a {{ download.isCollection ? 'fájlcsoportot' : 'fájlt' }}.</p>
+      @if (download.note) { <p class="invite-note">{{ download.note }}</p> }
+      <div class="invite-meta"><span>Kód: <strong>{{ download.code }}</strong></span><span>Elérhető eddig: <strong>{{ formatDateTime(download.expiresAtUtc) }}</strong></span><span>Méret: <strong>{{ formatSize(download.sizeBytes) }}</strong></span></div>
+      @if (download.isCollection) {
+        <section class="public-download-files">
+          <div class="public-download-heading"><div><h2>{{ download.fileCount }} fájl</h2><p>Egyenként vagy ZIP-ként töltheted le őket.</p></div>@if (download.zipDownloadUrl) { <button type="button" class="invite-primary" (click)="downloadPublicItem(download.zipDownloadUrl)">Letöltés ZIP-ként</button> }</div>
+          <div class="invite-file-list">
+            @for (file of download.files; track file.id) {
+              <div><span><strong>{{ file.relativePath || file.fileName }}</strong><small>{{ formatSize(file.sizeBytes) }}</small></span><button type="button" class="download-button" (click)="downloadPublicItem(file.downloadUrl)">Letöltés</button></div>
+            }
+          </div>
+        </section>
+      } @else {
+        <button type="button" class="invite-primary public-download-button" (click)="downloadPublicItem(download.downloadUrl)">Fájl letöltése</button>
+      }
+      <p class="public-download-safety">A link csak ezt a megosztást éri el, és a feltüntetett időpontban automatikusan lejár.</p>
+    } @else if (publicDownloadState() === 'loading') {
+      <div class="invite-loading"><h1>Megosztás betöltése…</h1></div>
+    } @else {
+      <div class="invite-loading"><h1>Ez a publikus link nem használható</h1><p>Lehet, hogy lejárt, visszavonták, vagy hibás a kód.</p></div>
+    }
+  </main>
+</div>
+} @else if (publicInviteCode()) {
 <div class="invite-public-shell">
   <main class="invite-public-card">
     <a class="brand invite-public-brand" href="/" aria-label="FileDrop"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 4.75h10.1L25 11.7v14.55a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="2"/><path d="M18 5v7h7M11 18h10M11 22h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span>FileDrop</span></a>
@@ -271,6 +301,10 @@
               <span class="option-radio" aria-hidden="true"></span>
               <span class="visibility-copy"><strong>Csak kóddal</strong><small>Nem jelenik meg a közös listában</small></span>
             </button>
+            <button type="button" class="visibility-option public-visibility-option" [class.chosen]="visibility() === 'public'" [attr.aria-pressed]="visibility() === 'public'" (click)="setVisibility('public')">
+              <span class="option-radio" aria-hidden="true"></span>
+              <span class="visibility-copy"><strong>Publikus link</strong><small>Az interneten bárki letöltheti, aki megkapja a 8 karakteres linket</small></span>
+            </button>
           </div>
         </fieldset>
 
@@ -278,7 +312,7 @@
         <div class="select-wrap">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6.75" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v4.25l2.75 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <select id="expiry" [value]="expiration()" (change)="setExpiration($event)">
-            @for (option of expirationOptions; track option.value) {
+            @for (option of availableExpirationOptions(); track option.value) {
               <option [value]="option.value" [selected]="expiration() === option.value">{{ option.label }}</option>
             }
           </select>
@@ -301,7 +335,11 @@
             <div class="share-result-copy">
               <p class="result-kicker">A megosztás elkészült</p>
               <h3 id="share-result-heading">{{ share.fileName }}</h3>
-              @if (share.accessCode) {
+              @if (share.publicUrl) {
+                <p class="share-code-label">Publikus link kódja</p>
+                <strong class="share-code">{{ share.publicAccessCode }}</strong>
+                <p>A link az interneten is megnyitható {{ formatExpiry(share) }}.</p>
+              } @else if (share.accessCode) {
                 <p class="share-code-label">Megosztási kód</p>
                 <strong class="share-code">{{ share.accessCode }}</strong>
               } @else {
@@ -318,7 +356,7 @@
             <div><p class="result-kicker">A megosztások elkészültek</p><h3 id="batch-result-heading">{{ createdShares().length }} fájl kapott külön kódot</h3></div>
             <div class="batch-result-list">
               @for (share of createdShares(); track share.id) {
-                <article><div><strong>{{ share.title || share.fileName }}</strong><span>{{ formatSize(share.sizeBytes) }}</span></div><code>{{ share.accessCode }}</code><button type="button" class="share-tools-button" (click)="restoreShareTools(share)">Megosztás</button></article>
+                <article><div><strong>{{ share.title || share.fileName }}</strong><span>{{ formatSize(share.sizeBytes) }}</span></div><code>{{ share.publicAccessCode || share.accessCode }}</code><button type="button" class="share-tools-button" (click)="restoreShareTools(share)">Megosztás</button></article>
               }
             </div>
           </section>
@@ -401,9 +439,10 @@
               @for (item of visibleOwnedShares(); track item.share.id) {
                 <article class="file-row owned-row" [class.inactive]="item.status !== 'active'">
                   <span class="file-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6.5 3.5h7l4 4v13h-11v-17Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.5 3.5v4h4M9 12h6M9 16h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
-                  <div class="file-row-name"><strong>{{ item.share.title || item.share.fileName }}</strong><span>{{ item.share.isCollection ? item.share.fileCount + ' fájl · ' : '' }}{{ item.share.title ? item.share.fileName + ' · ' : '' }}{{ formatSize(item.share.sizeBytes) }} · {{ item.share.visibility === 'shared' ? 'közös' : 'kódos' }}</span>
+                  <div class="file-row-name"><strong>{{ item.share.title || item.share.fileName }}</strong><span>{{ item.share.isCollection ? item.share.fileCount + ' fájl · ' : '' }}{{ item.share.title ? item.share.fileName + ' · ' : '' }}{{ formatSize(item.share.sizeBytes) }} · {{ item.share.visibility === 'shared' ? 'közös' : item.share.visibility === 'public' ? 'publikus' : 'kódos' }}</span>
                     @if (item.share.note) { <span class="file-note">{{ item.share.note }}</span> }
-                    @if (item.share.accessCode) { <span class="owned-code">Kód: <strong>{{ item.share.accessCode }}</strong><button type="button" class="inline-copy" (click)="copyShareCode(item.share.accessCode!)">Másolás</button></span> }
+                    @if (item.share.publicAccessCode) { <span class="owned-code">Publikus kód: <strong>{{ item.share.publicAccessCode }}</strong><button type="button" class="inline-copy" (click)="copyShareCode(item.share.publicAccessCode!)">Másolás</button></span> }
+                    @else if (item.share.accessCode) { <span class="owned-code">Kód: <strong>{{ item.share.accessCode }}</strong><button type="button" class="inline-copy" (click)="copyShareCode(item.share.accessCode!)">Másolás</button></span> }
                   </div>
                   <div class="file-row-expiry"><span>{{ ownedStatusLabel(item.status) }}</span><strong>{{ formatExpiry(item.share) }}</strong></div>
                   @if (item.status === 'active') {
@@ -573,13 +612,17 @@
           <div class="share-tools-copy">
             <p class="result-kicker">Továbbadás</p>
             <h2 id="share-tools-heading">{{ share.title || share.fileName }}</h2>
-            <p>A másik eszközön megnyithatják a linket, beolvashatják a QR-kódot, vagy beírhatják a rövid kódot.</p>
-            @if (share.accessCode) {
+            <p>{{ share.publicUrl ? 'A publikus link az interneten is megnyitható, és csak ezt a megosztást teszi elérhetővé.' : 'A másik eszközön megnyithatják a linket, beolvashatják a QR-kódot, vagy beírhatják a rövid kódot.' }}</p>
+            @if (share.publicAccessCode) {
+              <p class="share-code-label">Publikus link kódja</p>
+              <strong class="share-code">{{ share.publicAccessCode }}</strong>
+            } @else if (share.accessCode) {
               <p class="share-code-label">Megosztási kód</p>
               <strong class="share-code">{{ share.accessCode }}</strong>
             }
             <div class="dialog-actions">
-              @if (share.accessCode) { <button type="button" class="share-tools-button" (click)="copyShareCode(share.accessCode)">Kód másolása</button> }
+              @if (share.publicAccessCode) { <button type="button" class="share-tools-button" (click)="copyShareCode(share.publicAccessCode)">Kód másolása</button> }
+              @else if (share.accessCode) { <button type="button" class="share-tools-button" (click)="copyShareCode(share.accessCode)">Kód másolása</button> }
               <button type="button" class="copy-link" (click)="copyShareLink(share)">Link másolása</button>
             </div>
           </div>

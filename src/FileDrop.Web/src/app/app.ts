@@ -7,7 +7,7 @@ import { firstValueFrom } from 'rxjs';
 import { NativeSharedFile, ShareReceiver } from './share-receiver';
 
 type ViewName = 'download' | 'upload' | 'invites' | 'mine' | 'settings';
-type Visibility = 'shared' | 'code';
+type Visibility = 'shared' | 'code' | 'public';
 type UploadMode = 'collection' | 'separate';
 
 interface StorageStatus {
@@ -32,6 +32,8 @@ interface Share {
   sizeBytes: number;
   visibility: Visibility;
   accessCode: string | null;
+  publicAccessCode: string | null;
+  publicUrl: string | null;
   ownerDisplayName: string | null;
   createdAtUtc: string;
   expiresAtUtc: string | null;
@@ -130,6 +132,29 @@ interface PublicInvitation {
   uploads: InvitationUpload[];
 }
 
+interface PublicDownloadFile {
+  id: string;
+  fileName: string;
+  relativePath: string | null;
+  sizeBytes: number;
+  downloadUrl: string;
+}
+
+interface PublicDownload {
+  code: string;
+  fileName: string;
+  title: string | null;
+  note: string | null;
+  ownerDisplayName: string | null;
+  sizeBytes: number;
+  expiresAtUtc: string;
+  isCollection: boolean;
+  fileCount: number;
+  downloadUrl: string | null;
+  zipDownloadUrl: string | null;
+  files: PublicDownloadFile[];
+}
+
 interface DroppedEntry {
   isFile: boolean;
   isDirectory: boolean;
@@ -199,10 +224,13 @@ export class App implements OnInit, OnDestroy {
   protected readonly ownSessionsState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   protected readonly accountBusy = signal(false);
   protected readonly publicInviteCode = signal(this.readInviteCodeFromPath());
+  protected readonly publicDownloadCode = signal(this.readPublicDownloadCodeFromPath());
   protected readonly publicInvitation = signal<PublicInvitation | null>(null);
   protected readonly publicInviteState = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly publicInviteFiles = signal<File[]>([]);
   protected readonly publicInviteUploading = signal(false);
+  protected readonly publicDownload = signal<PublicDownload | null>(null);
+  protected readonly publicDownloadState = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly invitations = signal<OwnerInvitation[]>([]);
   protected readonly invitationsState = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   protected readonly createdInvitation = signal<OwnerInvitation | null>(null);
@@ -218,10 +246,10 @@ export class App implements OnInit, OnDestroy {
   ];
 
   ngOnInit(): void {
-    this.http.get<{ status: string }>('/api/health').subscribe({
-      next: (result) => this.apiStatus.set(result.status === 'ok' ? 'online' : 'offline'),
-      error: () => this.apiStatus.set('offline'),
-    });
+    if (this.publicDownloadCode()) {
+      this.loadPublicDownload();
+      return;
+    }
     if (this.publicInviteCode()) {
       this.loadPublicInvitation();
       this.refreshTimer = window.setInterval(() => this.refreshLiveData(), 5000);
@@ -229,6 +257,10 @@ export class App implements OnInit, OnDestroy {
       document.addEventListener('visibilitychange', this.refreshWhenVisible);
       return;
     }
+    this.http.get<{ status: string }>('/api/health').subscribe({
+      next: (result) => this.apiStatus.set(result.status === 'ok' ? 'online' : 'offline'),
+      error: () => this.apiStatus.set('offline'),
+    });
     this.loadStorage();
     this.loadAppRelease();
     this.loadAccount();
@@ -638,6 +670,9 @@ export class App implements OnInit, OnDestroy {
 
   protected setVisibility(value: Visibility): void {
     this.visibility.set(value);
+    if (value === 'public' && !['15m', '1h', '24h', '7d'].includes(this.expiration())) {
+      this.expiration.set('1h');
+    }
     this.createdShare.set(null);
     this.createdShares.set([]);
     this.qrCodeDataUrl.set('');
@@ -645,6 +680,12 @@ export class App implements OnInit, OnDestroy {
 
   protected setExpiration(event: Event): void {
     this.expiration.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected availableExpirationOptions(): { value: string; label: string }[] {
+    return this.visibility() === 'public'
+      ? this.expirationOptions.filter(option => ['15m', '1h', '24h', '7d'].includes(option.value))
+      : this.expirationOptions;
   }
 
   protected updateCode(event: Event): void {
@@ -1083,6 +1124,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   protected getShareLink(share: Share): string {
+    if (share.publicUrl) return share.publicUrl;
     return share.accessCode
       ? new URL(`/?code=${encodeURIComponent(share.accessCode)}`, window.location.origin).toString()
       : this.getAbsoluteDownloadUrl(share.downloadUrl);
@@ -1253,6 +1295,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   private refreshLiveData(): void {
+    if (this.publicDownloadCode()) return;
     if (this.publicInviteCode()) {
       if (document.visibilityState === 'visible') this.loadPublicInvitation(true);
       return;
@@ -1292,11 +1335,39 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
+  private loadPublicDownload(): void {
+    const code = this.publicDownloadCode();
+    if (!code) return;
+    this.publicDownloadState.set('loading');
+    this.http.get<PublicDownload>(`/api/public/downloads/${encodeURIComponent(code)}`).subscribe({
+      next: download => {
+        this.publicDownload.set(download);
+        this.publicDownloadState.set('ready');
+      },
+      error: () => {
+        this.publicDownload.set(null);
+        this.publicDownloadState.set('error');
+      },
+    });
+  }
+
   private readInviteCodeFromPath(): string | null {
     const match = window.location.pathname.match(/^\/u\/([A-Za-z0-9-]+)\/?$/);
     if (!match) return null;
     const compact = match[1].replace(/-/g, '').toUpperCase();
     return /^[A-Z0-9]{8}$/.test(compact) ? compact : null;
+  }
+
+  private readPublicDownloadCodeFromPath(): string | null {
+    const match = window.location.pathname.match(/^\/d\/([A-Za-z0-9-]+)\/?$/);
+    if (!match) return null;
+    const compact = match[1].replace(/-/g, '').toUpperCase();
+    return /^[A-HJ-NP-Z2-9]{8}$/.test(compact) ? compact : null;
+  }
+
+  protected downloadPublicItem(downloadUrl: string | null): void {
+    if (!downloadUrl) return;
+    window.location.assign(this.getAbsoluteDownloadUrl(downloadUrl));
   }
 
   private getInvitationLink(invitation: OwnerInvitation): string {

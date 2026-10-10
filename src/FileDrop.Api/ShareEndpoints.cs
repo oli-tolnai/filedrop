@@ -3,6 +3,7 @@ using System.IO.Compression;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 public static class ShareEndpoints
@@ -37,6 +38,14 @@ public static class ShareEndpoints
         endpoints.MapGet("/api/shares/code/{code}/download", DownloadByCodeAsync)
             .RequireRateLimiting("share-code");
         endpoints.MapGet("/api/shares/{id:guid}/download", DownloadAsync);
+        endpoints.MapGet("/api/public/downloads/{code}", OpenPublicDownloadAsync)
+            .RequireRateLimiting("public-download");
+        endpoints.MapGet("/api/public/downloads/{code}/file", DownloadPublicFileAsync)
+            .RequireRateLimiting("public-download");
+        endpoints.MapGet("/api/public/downloads/{code}/zip", DownloadPublicCollectionZipAsync)
+            .RequireRateLimiting("public-download");
+        endpoints.MapGet("/api/public/downloads/{code}/files/{fileId:guid}", DownloadPublicCollectionFileAsync)
+            .RequireRateLimiting("public-download");
         endpoints.MapGet("/api/me/shares", ListMySharesAsync);
         endpoints.MapDelete("/api/me/shares/{id:guid}", DeleteMyShareAsync);
         return endpoints;
@@ -54,6 +63,7 @@ public static class ShareEndpoints
         StorageCapacityService storage,
         UploadReservationService reservations,
         AccountSessionService sessions,
+        IOptions<FileDropOptions> options,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -61,10 +71,12 @@ public static class ShareEndpoints
         if (owner is null) return Results.Unauthorized();
 
         visibility = visibility.Trim().ToLowerInvariant();
-        if (visibility is not ("shared" or "code"))
-            return Results.BadRequest(new ApiError("A láthatóság csak 'shared' vagy 'code' lehet."));
+        if (visibility is not ("shared" or "code" or "public"))
+            return Results.BadRequest(new ApiError("A láthatóság csak 'shared', 'code' vagy 'public' lehet."));
         if (!TryGetExpiration(expiration, out var expiresAtUtc, out var deleteAfterFirstDownload))
             return Results.BadRequest(new ApiError("Ismeretlen lejárati beállítás."));
+        if (visibility == "public" && (expiresAtUtc is null || deleteAfterFirstDownload))
+            return Results.BadRequest(new ApiError("A publikus linkhez 15 perces, 1 órás, 24 órás vagy 7 napos lejárat szükséges."));
 
         var safeTitle = SanitizeMetadata(title, 120);
         if (!string.IsNullOrWhiteSpace(title) && safeTitle is null)
@@ -209,13 +221,16 @@ public static class ShareEndpoints
             await AccessCodeGate.WaitAsync(cancellationToken);
             try
             {
-                collection.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
+                if (visibility == "public")
+                    collection.PublicAccessCode = await GenerateUniquePublicCodeAsync(db, cancellationToken);
+                else
+                    collection.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
                 db.SharedFiles.Add(collection);
                 await db.SaveChangesAsync(cancellationToken);
             }
             finally { AccessCodeGate.Release(); }
 
-            return Results.Created($"/api/collections/{collection.Id}", ToDto(collection));
+            return Results.Created($"/api/collections/{collection.Id}", ToDto(collection, publicBaseUrl: options.Value.PublicBaseUrl));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -279,6 +294,7 @@ public static class ShareEndpoints
         StorageCapacityService storage,
         UploadReservationService reservations,
         AccountSessionService sessions,
+        IOptions<FileDropOptions> options,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -289,14 +305,18 @@ public static class ShareEndpoints
         }
 
         visibility = visibility.Trim().ToLowerInvariant();
-        if (visibility is not ("shared" or "code"))
+        if (visibility is not ("shared" or "code" or "public"))
         {
-            return Results.BadRequest(new ApiError("A láthatóság csak 'shared' vagy 'code' lehet."));
+            return Results.BadRequest(new ApiError("A láthatóság csak 'shared', 'code' vagy 'public' lehet."));
         }
 
         if (!TryGetExpiration(expiration, out var expiresAtUtc, out var deleteAfterFirstDownload))
         {
             return Results.BadRequest(new ApiError("Ismeretlen lejárati beállítás."));
+        }
+        if (visibility == "public" && (expiresAtUtc is null || deleteAfterFirstDownload))
+        {
+            return Results.BadRequest(new ApiError("A publikus linkhez 15 perces, 1 órás, 24 órás vagy 7 napos lejárat szükséges."));
         }
 
         var safeTitle = SanitizeMetadata(title, 120);
@@ -400,7 +420,10 @@ public static class ShareEndpoints
             await AccessCodeGate.WaitAsync(cancellationToken);
             try
             {
-                share.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
+                if (visibility == "public")
+                    share.PublicAccessCode = await GenerateUniquePublicCodeAsync(db, cancellationToken);
+                else
+                    share.AccessCode = await GenerateUniqueCodeAsync(db, cancellationToken);
                 db.SharedFiles.Add(share);
                 await db.SaveChangesAsync(cancellationToken);
             }
@@ -409,7 +432,7 @@ public static class ShareEndpoints
                 AccessCodeGate.Release();
             }
 
-            return Results.Created($"/api/shares/{share.Id}/download", ToDto(share));
+            return Results.Created($"/api/shares/{share.Id}/download", ToDto(share, publicBaseUrl: options.Value.PublicBaseUrl));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -736,6 +759,112 @@ public static class ShareEndpoints
         }
     }
 
+    private static async Task<IResult> OpenPublicDownloadAsync(
+        string code,
+        FileDropDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var share = await LoadActivePublicShareAsync(code, db, cancellationToken);
+        if (share is null) return Results.NotFound(new ApiError("A publikus megosztás nem található vagy már lejárt."));
+
+        var formattedCode = FormatPublicCode(share.PublicAccessCode!);
+        var apiCode = share.PublicAccessCode!;
+        var files = share.IsCollection
+            ? GetActiveCollectionFiles(share)
+                .Select(file => new PublicDownloadFileDto(
+                    file.Id,
+                    file.OriginalFileName,
+                    file.RelativePath,
+                    file.SizeBytes,
+                    $"/api/public/downloads/{apiCode}/files/{file.Id}"))
+                .ToList()
+            : [];
+
+        return Results.Ok(new PublicDownloadDto(
+            formattedCode,
+            share.OriginalFileName,
+            share.Title,
+            share.Note,
+            share.Owner?.DisplayName,
+            share.SizeBytes,
+            share.ExpiresAtUtc,
+            share.IsCollection,
+            share.IsCollection ? files.Count : 1,
+            share.IsCollection ? null : $"/api/public/downloads/{apiCode}/file",
+            share.IsCollection ? $"/api/public/downloads/{apiCode}/zip" : null,
+            files));
+    }
+
+    private static async Task<IResult> DownloadPublicFileAsync(
+        string code,
+        HttpContext context,
+        FileDropDbContext db,
+        AccountSessionService sessions,
+        StorageCapacityService storage,
+        IServiceScopeFactory scopeFactory,
+        CancellationToken cancellationToken)
+    {
+        var share = await LoadActivePublicShareAsync(code, db, cancellationToken);
+        if (share is null || share.IsCollection)
+            return Results.NotFound(new ApiError("A publikus fájl nem található vagy már lejárt."));
+        return await DownloadAsync(share.Id, context, db, sessions, storage, scopeFactory, cancellationToken, allowAnonymousCode: true);
+    }
+
+    private static async Task<IResult> DownloadPublicCollectionZipAsync(
+        string code,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        IServiceScopeFactory scopeFactory,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActivePublicShareAsync(code, db, cancellationToken);
+        if (collection is null || !collection.IsCollection)
+            return Results.NotFound(new ApiError("A publikus fájlcsoport nem található vagy már lejárt."));
+        return await CreateCollectionZipResultAsync(collection, db, storage, scopeFactory, cancellationToken);
+    }
+
+    private static async Task<IResult> DownloadPublicCollectionFileAsync(
+        string code,
+        Guid fileId,
+        FileDropDbContext db,
+        StorageCapacityService storage,
+        CancellationToken cancellationToken)
+    {
+        var collection = await LoadActivePublicShareAsync(code, db, cancellationToken);
+        if (collection is null || !collection.IsCollection)
+            return Results.NotFound(new ApiError("A publikus fájlcsoport nem található vagy már lejárt."));
+
+        var file = GetActiveCollectionFiles(collection).FirstOrDefault(item => item.Id == fileId);
+        if (file is null) return Results.NotFound(new ApiError("A fájl nem található."));
+        var filePath = Path.Combine(storage.StoragePath, file.StoredFileName);
+        if (!File.Exists(filePath)) return Results.NotFound(new ApiError("A fájl már nincs a tárhelyen."));
+
+        collection.DownloadCount++;
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.File(filePath, file.ContentType, file.OriginalFileName, enableRangeProcessing: true);
+    }
+
+    private static async Task<SharedFile?> LoadActivePublicShareAsync(
+        string code,
+        FileDropDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var normalized = NormalizePublicCode(code);
+        if (normalized is null) return null;
+        var now = DateTime.UtcNow;
+        return await db.SharedFiles
+            .Include(file => file.Owner)
+            .Include(file => file.CollectionFiles)
+            .FirstOrDefaultAsync(file => file.ParentShareId == null
+                && file.Visibility == "public"
+                && file.PublicAccessCode == normalized
+                && file.FileDeletedAtUtc == null
+                && file.ConsumedAtUtc == null
+                && file.ExpiresAtUtc != null
+                && file.ExpiresAtUtc > now,
+                cancellationToken);
+    }
+
     private static async Task<IResult> DownloadAsync(
         Guid id,
         HttpContext context,
@@ -775,6 +904,7 @@ public static class ShareEndpoints
         {
             share.FileDeletedAtUtc = now;
             share.AccessCode = null;
+            share.PublicAccessCode = null;
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Results.NotFound(new ApiError("A fájl már nincs a tárhelyen."));
@@ -785,6 +915,7 @@ public static class ShareEndpoints
         {
             share.ConsumedAtUtc = now;
             share.AccessCode = null;
+            share.PublicAccessCode = null;
             context.Response.OnCompleted(async () =>
             {
                 SafeDelete(filePath);
@@ -795,6 +926,7 @@ public static class ShareEndpoints
                 {
                     completedShare.FileDeletedAtUtc = DateTime.UtcNow;
                     completedShare.AccessCode = null;
+                    completedShare.PublicAccessCode = null;
                     await completionDb.SaveChangesAsync();
                 }
             });
@@ -842,7 +974,7 @@ public static class ShareEndpoints
         return await DownloadAsync(share.Id, context, db, sessions, storage, scopeFactory, cancellationToken, allowAnonymousCode: true);
     }
 
-    internal static ShareDto ToDto(SharedFile file, bool codeDownload = false) => new(
+    internal static ShareDto ToDto(SharedFile file, bool codeDownload = false, string? publicBaseUrl = null) => new(
         file.Id,
         file.OriginalFileName,
         file.Title,
@@ -850,6 +982,8 @@ public static class ShareEndpoints
         file.SizeBytes,
         file.Visibility,
         file.AccessCode,
+        file.PublicAccessCode is null ? null : FormatPublicCode(file.PublicAccessCode),
+        BuildPublicDownloadUrl(publicBaseUrl, file.PublicAccessCode),
         file.Owner?.DisplayName,
         file.CreatedAtUtc,
         file.ExpiresAtUtc,
@@ -869,6 +1003,7 @@ public static class ShareEndpoints
         HttpContext context,
         FileDropDbContext db,
         AccountSessionService sessions,
+        IOptions<FileDropOptions> options,
         CancellationToken cancellationToken)
     {
         var account = await sessions.GetCurrentAsync(context, db, cancellationToken);
@@ -883,7 +1018,7 @@ public static class ShareEndpoints
             .ToListAsync(cancellationToken);
         await EnsureAccessCodesAsync(files, db, cancellationToken);
         return Results.Ok(files.Select(file => new OwnedShareDto(
-            ToDto(file),
+            ToDto(file, publicBaseUrl: options.Value.PublicBaseUrl),
             file.FileDeletedAtUtc is not null || file.ConsumedAtUtc is not null
                 ? "deleted"
                 : file.ExpiresAtUtc is not null && file.ExpiresAtUtc <= DateTime.UtcNow
@@ -927,6 +1062,7 @@ public static class ShareEndpoints
         }
         share.FileDeletedAtUtc = deletedAtUtc;
         share.AccessCode = null;
+        share.PublicAccessCode = null;
         await db.SaveChangesAsync(cancellationToken);
         return Results.NoContent();
     }
@@ -1042,6 +1178,48 @@ public static class ShareEndpoints
         throw new InvalidOperationException("Nem sikerült szabad megosztási kódot létrehozni.");
     }
 
+    private static async Task<string> GenerateUniquePublicCodeAsync(
+        FileDropDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var codeChars = new char[8];
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            for (var index = 0; index < codeChars.Length; index++)
+            {
+                codeChars[index] = ShareCodeAlphabet[RandomNumberGenerator.GetInt32(ShareCodeAlphabet.Length)];
+            }
+
+            var code = new string(codeChars);
+            if (!await db.SharedFiles.AnyAsync(file => file.PublicAccessCode == code, cancellationToken))
+            {
+                return code;
+            }
+        }
+
+        throw new InvalidOperationException("Nem sikerült szabad publikus megosztási kódot létrehozni.");
+    }
+
+    private static string? NormalizePublicCode(string code)
+    {
+        var normalized = new string(code.Where(char.IsAsciiLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+        return normalized.Length == 8 && normalized.All(ShareCodeAlphabet.Contains) ? normalized : null;
+    }
+
+    private static string FormatPublicCode(string code) => code.Length == 8 ? $"{code[..4]}-{code[4..]}" : code;
+
+    private static string? BuildPublicDownloadUrl(string? publicBaseUrl, string? code)
+    {
+        if (code is null
+            || !Uri.TryCreate(publicBaseUrl?.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var baseUri)
+            || !string.Equals(baseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return new Uri(baseUri, $"d/{FormatPublicCode(code)}").ToString();
+    }
+
     private static async Task EnsureAccessCodesAsync(
         IReadOnlyCollection<SharedFile> files,
         FileDropDbContext db,
@@ -1105,6 +1283,8 @@ public sealed record ShareDto(
     long SizeBytes,
     string Visibility,
     string? AccessCode,
+    string? PublicAccessCode,
+    string? PublicUrl,
     string? OwnerDisplayName,
     DateTime CreatedAtUtc,
     DateTime? ExpiresAtUtc,
@@ -1113,6 +1293,27 @@ public sealed record ShareDto(
     string DownloadUrl,
     bool IsCollection,
     int FileCount);
+
+public sealed record PublicDownloadFileDto(
+    Guid Id,
+    string FileName,
+    string? RelativePath,
+    long SizeBytes,
+    string DownloadUrl);
+
+public sealed record PublicDownloadDto(
+    string Code,
+    string FileName,
+    string? Title,
+    string? Note,
+    string? OwnerDisplayName,
+    long SizeBytes,
+    DateTime? ExpiresAtUtc,
+    bool IsCollection,
+    int FileCount,
+    string? DownloadUrl,
+    string? ZipDownloadUrl,
+    IReadOnlyList<PublicDownloadFileDto> Files);
 
 file sealed record CollectionUpload(
     Guid Id,

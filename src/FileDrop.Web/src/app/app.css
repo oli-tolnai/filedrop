@@ -182,6 +182,14 @@
 .privacy-hint, .empty-invite-copy { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .invite-loading { padding: 50px 0; text-align: center; }
 
+.public-download-card { max-width: 780px; }
+.public-download-button { width: 100%; min-height: 52px; margin-top: 18px; font-size: 16px; }
+.public-download-files { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfe; }
+.public-download-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.public-download-heading h2 { margin: 0 0 3px; font-size: 20px; }
+.public-download-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.public-download-safety { margin: 15px 0 0 !important; color: var(--muted) !important; font-size: 13px; line-height: 1.5; text-align: center; }
+
 @media (max-width: 720px) {
   .invitation-layout, .invitation-form-grid { grid-template-columns: 1fr; }
   .invitation-page { margin-top: 16px; }
@@ -192,6 +200,7 @@
   .invite-public-shell { padding: 10px; }
   .invite-public-card { padding: 18px 14px; border-radius: 14px; }
   .invite-public-brand { margin-bottom: 26px; }
+  .public-download-heading { align-items: stretch; flex-direction: column; }
 }
 
 button,
@@ -899,8 +908,18 @@ p {
 
 .visibility-options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 11px;
+}
+
+.public-visibility-option.chosen {
+  border-color: #16805f;
+  background: #eef9f5;
+  box-shadow: inset 0 0 0 1px #16805f;
+}
+
+.public-visibility-option.chosen .option-radio {
+  border-color: #16805f;
 }
 
 .visibility-option {

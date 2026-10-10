@@ -20,9 +20,11 @@ public sealed class FileDropDbContext(DbContextOptions<FileDropDbContext> option
         share.Property(item => item.Note).HasMaxLength(1000);
         share.Property(item => item.Visibility).HasMaxLength(20);
         share.Property(item => item.AccessCode).HasMaxLength(6);
+        share.Property(item => item.PublicAccessCode).HasMaxLength(8);
         share.Property(item => item.RelativePath).HasMaxLength(1000);
         share.Property(item => item.BatchAccessTokenHash).HasMaxLength(64);
         share.HasIndex(item => item.AccessCode).IsUnique();
+        share.HasIndex(item => item.PublicAccessCode).IsUnique();
         share.HasIndex(item => item.ExpiresAtUtc);
         share.HasIndex(item => item.ParentShareId);
 
@@ -86,6 +88,7 @@ public sealed class SharedFile
     public long SizeBytes { get; set; }
     public required string Visibility { get; set; }
     public string? AccessCode { get; set; }
+    public string? PublicAccessCode { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? ExpiresAtUtc { get; set; }
     public bool DeleteAfterFirstDownload { get; set; }

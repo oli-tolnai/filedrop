@@ -52,6 +52,14 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    options.AddPolicy("public-download", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -104,7 +112,9 @@ static void EnsureShareMetadataColumns(FileDropDbContext db)
     AddShareColumnIfMissing(db, "RelativePath TEXT NULL");
     AddShareColumnIfMissing(db, "BatchAccessTokenHash TEXT NULL");
     AddShareColumnIfMissing(db, "BatchAccessExpiresAtUtc TEXT NULL");
+    AddShareColumnIfMissing(db, "PublicAccessCode TEXT NULL");
     db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_SharedFiles_ParentShareId ON SharedFiles (ParentShareId);");
+    db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_SharedFiles_PublicAccessCode ON SharedFiles (PublicAccessCode);");
 }
 
 static void AddShareColumnIfMissing(FileDropDbContext db, string definition)

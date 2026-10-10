@@ -21,6 +21,7 @@ Egyszerű, magyar nyelvű fájlátadás az otthoni hálózaton. Az Angular felü
 - A lejárt fájlok és munkamenetek automatikusan takarítódnak, újraindítás után is.
 - Bármely belépett családtag létrehozhat rövid, nyolckarakteres feltöltési meghívót. A vendég fiók nélkül több fájlt küldhet, a saját ideiglenes fájljait javíthatja vagy törölheti, a tulajdonos pedig átvételkor normál FileDrop-megosztássá zárja le a csomagot.
 - Azonos meghívót több küldő is használhat: külön HttpOnly böngésző-munkamenetet kapnak, ezért egymás fájljait nem látják és nem törölhetik.
+- Feltöltéskor választható időkorlátos publikus link. A nyolckarakteres kód kizárólag az adott fájlt vagy gyűjteményt teszi elérhetővé a `drop.tolnaioli.hu` címen; más alkalmazásadatot nem nyit meg.
 
 ## Tárhelyszabályok
 
@@ -118,7 +119,7 @@ A Compose alapértelmezetten a Dell LAN-címén publikál: `192.168.0.34:8090`. 
 
 Az éles `.env` fájl nem kerül verziókezelésbe. A konténer nem rootként fut, a saját rendszerfájlrendszere csak olvasható, minden capability el van dobva, és kizárólag `/srv/filedrop/data` írható számára.
 
-## Nyilvános feltöltési meghívó
+## Nyilvános feltöltési meghívó és letöltési link
 
 A nyilvános Cloudflare Tunnel nem közvetlenül a FileDrop alkalmazáshoz csatlakozik.
 A `filedrop-public-gateway` egy külön, csak a Dell loopback címére publikált Nginx
@@ -126,12 +127,18 @@ A `filedrop-public-gateway` egy külön, csak a Dell loopback címére publikál
 
 - a `/u/XXXX-XXXX` meghívóoldalt és annak hash-elt JavaScript/CSS fájljait;
 - az adott meghívó lekérdezését;
-- vendégfájl feltöltését és a feltöltő saját ideiglenes fájljának törlését.
+- vendégfájl feltöltését és a feltöltő saját ideiglenes fájljának törlését;
+- a `/d/XXXX-XXXX` publikus letöltőoldalt, valamint kizárólag az adott kódhoz tartozó fájl vagy gyűjtemény letöltését.
 
-A kezdőlap, bejelentkezés, fiókok, megosztások, letöltések és adminisztráció ezen
-az átjárón mindig `404` választ adnak. A Tunnel konténer kifelé épít kapcsolatot,
+A kezdőlap, bejelentkezés, fiókok, normál megosztások és adminisztráció ezen az
+átjárón mindig `404` választ adnak. A Tunnel konténer kifelé épít kapcsolatot,
 ezért routerportot nem kell nyitni. A Tunnel token titok: kizárólag a Dell
 `root:root`, `600` jogosultságú `.env` fájljába kerülhet.
+
+A publikus letöltési kód 8 karakteres, 40 bit entrópiájú és IP-alapú
+sebességkorlátozás védi. Publikus megosztás csak 15 perces, 1 órás, 24 órás
+vagy 7 napos lejárattal hozható létre. A link lejáratakor vagy a megosztás
+visszavonásakor a publikus hozzáférés is megszűnik.
 
 A nyilvános profil helyi kapuja a `127.0.0.1:8092` címen ellenőrizhető:
 

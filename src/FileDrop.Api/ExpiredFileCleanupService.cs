@@ -40,10 +40,12 @@ public sealed class ExpiredFileCleanupService(
                     ShareEndpoints.SafeDelete(Path.Combine(storage.StoragePath, file.StoredFileName));
                     file.FileDeletedAtUtc = now;
                     file.AccessCode = null;
+                    file.PublicAccessCode = null;
                 }
 
                 collection.FileDeletedAtUtc = now;
                 collection.AccessCode = null;
+                collection.PublicAccessCode = null;
                 collection.BatchAccessTokenHash = null;
                 collection.BatchAccessExpiresAtUtc = null;
             }
@@ -61,6 +63,7 @@ public sealed class ExpiredFileCleanupService(
                 ShareEndpoints.SafeDelete(Path.Combine(storage.StoragePath, share.StoredFileName));
                 share.FileDeletedAtUtc = now;
                 share.AccessCode = null;
+                share.PublicAccessCode = null;
             }
 
             var expiredInvitationUploads = await db.InvitationUploads
